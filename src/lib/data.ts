@@ -1,4 +1,10 @@
-import { appendRow, ensureSpreadsheet, readTable, upsertRowByKey } from "./sheets";
+import {
+  appendRow,
+  appendRows,
+  ensureSpreadsheet,
+  readTable,
+  upsertRowByKey,
+} from "./sheets";
 import type {
   Asset,
   Holding,
@@ -40,6 +46,20 @@ export async function addAsset(
   });
 }
 
+export async function addAssetsBulk(
+  accessToken: string,
+  spreadsheetId: string,
+  assets: Omit<Asset, "createdAt">[]
+) {
+  const createdAt = new Date().toISOString();
+  await appendRows(
+    accessToken,
+    spreadsheetId,
+    "assets",
+    assets.map((a) => ({ ...a, createdAt }))
+  );
+}
+
 export async function getTransactions(
   accessToken: string,
   spreadsheetId: string
@@ -74,6 +94,20 @@ export async function addTransaction(
     id: crypto.randomUUID(),
     createdAt: new Date().toISOString(),
   });
+}
+
+export async function addTransactionsBulk(
+  accessToken: string,
+  spreadsheetId: string,
+  txs: Omit<Transaction, "id" | "createdAt">[]
+) {
+  const createdAt = new Date().toISOString();
+  await appendRows(
+    accessToken,
+    spreadsheetId,
+    "transactions",
+    txs.map((t) => ({ ...t, id: crypto.randomUUID(), createdAt }))
+  );
 }
 
 export async function getPrices(accessToken: string, spreadsheetId: string) {
@@ -117,6 +151,7 @@ export async function getSnapshots(
   return rows.map(
     (r): Snapshot => ({
       date: r.date,
+      currency: (r.currency || "THB") as Snapshot["currency"],
       totalValue: Number(r.totalValue),
       totalCost: Number(r.totalCost),
       byCategoryJson: r.byCategoryJson,

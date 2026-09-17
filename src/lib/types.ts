@@ -31,6 +31,7 @@ export interface PriceEntry {
 
 export interface Snapshot {
   date: string;
+  currency: Currency;
   totalValue: number;
   totalCost: number;
   byCategoryJson: string;

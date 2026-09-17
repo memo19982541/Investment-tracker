@@ -7,6 +7,7 @@ const links = [
   { href: "/transactions", label: "ธุรกรรม" },
   { href: "/prices", label: "อัปเดตราคา" },
   { href: "/history", label: "ประวัติ" },
+  { href: "/import", label: "นำเข้าข้อมูล" },
 ];
 
 export default async function Nav() {

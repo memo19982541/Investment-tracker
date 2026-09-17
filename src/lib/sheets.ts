@@ -16,7 +16,14 @@ export const SHEET_TABS = {
     "createdAt",
   ],
   prices: ["assetId", "price", "updatedAt"],
-  snapshots: ["date", "totalValue", "totalCost", "byCategoryJson", "createdAt"],
+  snapshots: [
+    "date",
+    "currency",
+    "totalValue",
+    "totalCost",
+    "byCategoryJson",
+    "createdAt",
+  ],
 } as const;
 
 export type TabName = keyof typeof SHEET_TABS;
@@ -105,9 +112,22 @@ export async function appendRow(
   tab: TabName,
   rowObj: Record<string, string | number>
 ) {
+  await appendRows(accessToken, spreadsheetId, tab, [rowObj]);
+}
+
+/** Appends many rows in a single API call — use this for bulk imports. */
+export async function appendRows(
+  accessToken: string,
+  spreadsheetId: string,
+  tab: TabName,
+  rowObjs: Record<string, string | number>[]
+) {
+  if (rowObjs.length === 0) return;
   const sheets = getSheetsClient(accessToken);
   const headers = SHEET_TABS[tab] as unknown as string[];
-  const values = [headers.map((h) => String(rowObj[h] ?? ""))];
+  const values = rowObjs.map((rowObj) =>
+    headers.map((h) => String(rowObj[h] ?? ""))
+  );
   await sheets.spreadsheets.values.append({
     spreadsheetId,
     range: `${tab}!A1`,
