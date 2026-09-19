@@ -1,7 +1,8 @@
 import { requireContext } from "@/lib/session";
 import { getSnapshots } from "@/lib/data";
 import { formatDate, formatMoney } from "@/lib/format";
-import HistoryChart from "@/components/HistoryChart";
+import AddMonthlySnapshotsForm from "@/components/AddMonthlySnapshotsForm";
+import RecomputeHistoryButton from "@/components/RecomputeHistoryButton";
 import type { Currency } from "@/lib/types";
 
 const CURRENCY_LABEL: Record<Currency, string> = {
@@ -33,20 +34,18 @@ export default async function HistoryPage() {
 
   return (
     <main className="mx-auto max-w-4xl space-y-12 p-6">
+      <div className="flex flex-wrap items-start justify-end gap-3">
+        <AddMonthlySnapshotsForm />
+        <RecomputeHistoryButton />
+      </div>
       {([...byCurrency.entries()] as [Currency, typeof snapshots][]).map(
         ([currency, list]) => {
           const sorted = [...list].sort((a, b) => a.date.localeCompare(b.date));
-          const points = sorted.map((s) => ({
-            date: formatDate(s.date),
-            totalValue: s.totalValue,
-            totalCost: s.totalCost,
-          }));
           return (
             <section key={currency} className="space-y-6">
               <h1 className="text-lg font-semibold">
                 ประวัติมูลค่า {CURRENCY_LABEL[currency]}
               </h1>
-              <HistoryChart points={points} />
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>

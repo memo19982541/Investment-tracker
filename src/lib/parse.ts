@@ -4,6 +4,11 @@ export function splitRow(line: string): string[] {
   return cols.map((c) => c.trim());
 }
 
+/** Parses a number that may have thousands-separator commas (e.g. "841,554.10"). */
+export function parseNumber(input: string): number {
+  return Number((input ?? "").replace(/,/g, "").trim());
+}
+
 /** Parses D/M/YYYY (Thai sheet format) or YYYY-MM-DD into YYYY-MM-DD. */
 export function parseDateFlexible(input: string): string {
   const s = input.trim();

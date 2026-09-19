@@ -1,11 +1,17 @@
 import { requireContext } from "@/lib/session";
-import { getAssets } from "@/lib/data";
+import { getAssets, getTransactions } from "@/lib/data";
 import { DEFAULT_CATEGORIES } from "@/lib/types";
+import DeleteAssetButton from "@/components/DeleteAssetButton";
+import HideAssetToggle from "@/components/HideAssetToggle";
 import { createAsset } from "./actions";
 
 export default async function AssetsPage() {
   const { accessToken, spreadsheetId } = await requireContext();
-  const assets = await getAssets(accessToken, spreadsheetId);
+  const [assets, transactions] = await Promise.all([
+    getAssets(accessToken, spreadsheetId),
+    getTransactions(accessToken, spreadsheetId),
+  ]);
+  const assetIdsWithTransactions = new Set(transactions.map((t) => t.assetId));
 
   return (
     <main className="mx-auto max-w-3xl space-y-8 p-6">
@@ -32,6 +38,7 @@ export default async function AssetsPage() {
             >
               <option value="fund">กองทุน</option>
               <option value="stock">หุ้น</option>
+              <option value="cash">เงินสด</option>
             </select>
           </label>
           <label className="flex flex-col gap-1 text-sm">
@@ -83,20 +90,45 @@ export default async function AssetsPage() {
                   <th className="py-2 pr-4">ประเภท</th>
                   <th className="py-2 pr-4">หมวด</th>
                   <th className="py-2 pr-4">สกุลเงิน</th>
+                  <th className="py-2 pr-4"></th>
+                  <th className="py-2 pr-4"></th>
                 </tr>
               </thead>
               <tbody>
                 {assets.map((a) => (
                   <tr
                     key={a.id}
-                    className="border-b border-black/5 dark:border-white/5"
+                    className={`border-b border-black/5 dark:border-white/5 ${
+                      a.hidden ? "text-black/40 dark:text-white/40" : ""
+                    }`}
                   >
-                    <td className="py-2 pr-4">{a.name}</td>
                     <td className="py-2 pr-4">
-                      {a.type === "fund" ? "กองทุน" : "หุ้น"}
+                      {a.name}
+                      {a.hidden && (
+                        <span className="ml-2 rounded-full border border-black/15 px-2 py-0.5 text-[10px] dark:border-white/20">
+                          ซ่อนอยู่
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-4">
+                      {a.type === "fund"
+                        ? "กองทุน"
+                        : a.type === "stock"
+                          ? "หุ้น"
+                          : "เงินสด"}
                     </td>
                     <td className="py-2 pr-4">{a.category}</td>
                     <td className="py-2 pr-4">{a.currency}</td>
+                    <td className="py-2 pr-4 text-right">
+                      <HideAssetToggle assetId={a.id} hidden={!!a.hidden} />
+                    </td>
+                    <td className="py-2 pr-4 text-right">
+                      <DeleteAssetButton
+                        assetId={a.id}
+                        assetName={a.name}
+                        hasTransactions={assetIdsWithTransactions.has(a.id)}
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>

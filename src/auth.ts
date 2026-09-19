@@ -41,6 +41,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.refreshToken = account.refresh_token;
         token.expiresAt = account.expires_at ?? undefined;
         token.error = undefined;
+
+        // One-time setup helper for the scheduled price-fetch cron job,
+        // which has no browser session and needs a long-lived refresh token
+        // instead. Printed only to this server's own terminal — never to
+        // the browser — and only when explicitly opted into. Turn back off
+        // (remove the env var) once you've copied the token into
+        // GOOGLE_REFRESH_TOKEN.
+        if (process.env.DEBUG_PRINT_REFRESH_TOKEN === "true" && account.refresh_token) {
+          console.log(
+            "\n[DEBUG_PRINT_REFRESH_TOKEN] Google refresh token (copy into GOOGLE_REFRESH_TOKEN in .env.local, then remove this env var):\n" +
+              account.refresh_token +
+              "\n"
+          );
+        }
+
         return token;
       }
 

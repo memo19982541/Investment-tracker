@@ -16,5 +16,8 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/((?!api/auth|_next/static|_next/image|favicon.ico).*)"],
+  // /api/cron routes authenticate themselves via CRON_SECRET, not a
+  // browser session — an unattended scheduler has no session cookie to
+  // pass, so this middleware must not redirect those requests to /login.
+  matcher: ["/((?!api/auth|api/cron|_next/static|_next/image|favicon.ico).*)"],
 };

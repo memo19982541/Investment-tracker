@@ -1,16 +1,19 @@
 import { requireContext } from "@/lib/session";
 import { getAssets, getPrices } from "@/lib/data";
 import { formatDate } from "@/lib/format";
+import FetchPricesButton from "@/components/FetchPricesButton";
 import { updatePrices } from "./actions";
 
 export default async function PricesPage() {
   const { accessToken, spreadsheetId } = await requireContext();
-  const [assets, prices] = await Promise.all([
+  const [allAssets, prices] = await Promise.all([
     getAssets(accessToken, spreadsheetId),
     getPrices(accessToken, spreadsheetId),
   ]);
+  // Cash has no NAV to update — it's always worth 1 per unit.
+  const assets = allAssets.filter((a) => a.type !== "cash");
 
-  if (assets.length === 0) {
+  if (allAssets.length === 0) {
     return (
       <main className="mx-auto max-w-2xl p-6">
         <p className="text-sm text-black/60 dark:text-white/60">
@@ -29,6 +32,7 @@ export default async function PricesPage() {
           เมื่อบันทึกแล้วระบบจะเก็บมูลค่าพอร์ตรวม ณ วันนี้ไว้ในหน้าประวัติด้วย
         </p>
       </div>
+      <FetchPricesButton />
       <form action={updatePrices} className="space-y-3">
         <div className="overflow-x-auto rounded-lg border border-black/10 dark:border-white/10">
           <table className="w-full text-sm">
@@ -51,7 +55,13 @@ export default async function PricesPage() {
                     <td className="py-2 pl-4 pr-2">{a.name}</td>
                     <td className="py-2 pr-2">{a.category}</td>
                     <td className="py-2 pr-2 text-right text-black/60 dark:text-white/60">
-                      {p ? `${p.price} (${formatDate(p.updatedAt)})` : "-"}
+                      {p
+                        ? `${p.price}${
+                            p.navDate
+                              ? ` (NAV ณ ${formatDate(p.navDate)})`
+                              : ` (${formatDate(p.updatedAt)})`
+                          }`
+                        : "-"}
                     </td>
                     <td className="py-2 pr-4 text-right">
                       <input

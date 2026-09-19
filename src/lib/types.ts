@@ -1,4 +1,4 @@
-export type AssetType = "fund" | "stock";
+export type AssetType = "fund" | "stock" | "cash";
 export type Currency = "THB" | "USD";
 export type TxType = "buy" | "sell";
 
@@ -9,6 +9,9 @@ export interface Asset {
   category: string;
   currency: Currency;
   createdAt: string;
+  order?: number;
+  targetPct?: number;
+  hidden?: boolean;
 }
 
 export interface Transaction {
@@ -27,6 +30,19 @@ export interface PriceEntry {
   assetId: string;
   price: number;
   updatedAt: string;
+  navDate?: string;
+}
+
+export interface FundLogEntry {
+  date: string;
+  assetId: string;
+  units: number;
+  price: number;
+  costPerUnit: number;
+  value: number;
+  costValue: number;
+  pnl: number;
+  createdAt: string;
 }
 
 export interface Snapshot {

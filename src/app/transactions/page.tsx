@@ -1,16 +1,29 @@
 import { requireContext } from "@/lib/session";
-import { getAssets, getTransactions } from "@/lib/data";
+import { getAssets, getFundLog, getTransactions } from "@/lib/data";
 import { formatDate, formatMoney, formatUnits } from "@/lib/format";
-import { createTransaction } from "./actions";
+import AssetFilter from "@/components/AssetFilter";
+import DeleteTransactionButton from "@/components/DeleteTransactionButton";
+import FundPriceChart from "@/components/FundPriceChart";
+import TransactionForm from "@/components/TransactionForm";
 
-export default async function TransactionsPage() {
+export default async function TransactionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ assetId?: string }>;
+}) {
   const { accessToken, spreadsheetId } = await requireContext();
-  const [assets, transactions] = await Promise.all([
+  const [assets, transactions, fundLog] = await Promise.all([
     getAssets(accessToken, spreadsheetId),
     getTransactions(accessToken, spreadsheetId),
+    getFundLog(accessToken, spreadsheetId),
   ]);
   const assetById = new Map(assets.map((a) => [a.id, a]));
-  const sorted = [...transactions].sort((a, b) => b.date.localeCompare(a.date));
+  const { assetId: filterAssetId } = await searchParams;
+  const filtered = filterAssetId
+    ? transactions.filter((t) => t.assetId === filterAssetId)
+    : transactions;
+  const sorted = [...filtered].sort((a, b) => b.date.localeCompare(a.date));
+  const filterAsset = filterAssetId ? assetById.get(filterAssetId) : undefined;
 
   if (assets.length === 0) {
     return (
@@ -26,82 +39,24 @@ export default async function TransactionsPage() {
     <main className="mx-auto max-w-3xl space-y-8 p-6">
       <section>
         <h1 className="mb-4 text-lg font-semibold">บันทึกธุรกรรมซื้อ/ขาย</h1>
-        <form
-          action={createTransaction}
-          className="grid grid-cols-1 gap-3 rounded-lg border border-black/10 p-4 sm:grid-cols-2 dark:border-white/10"
-        >
-          <label className="flex flex-col gap-1 text-sm">
-            สินทรัพย์
-            <select
-              name="assetId"
-              required
-              className="rounded-md border border-black/15 px-3 py-2 dark:border-white/20 dark:bg-transparent"
-            >
-              {assets.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            ประเภทธุรกรรม
-            <select
-              name="type"
-              className="rounded-md border border-black/15 px-3 py-2 dark:border-white/20 dark:bg-transparent"
-            >
-              <option value="buy">ซื้อ</option>
-              <option value="sell">ขาย</option>
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            วันที่
-            <input
-              type="date"
-              name="date"
-              required
-              defaultValue={new Date().toISOString().slice(0, 10)}
-              className="rounded-md border border-black/15 px-3 py-2 dark:border-white/20 dark:bg-transparent"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            จำนวนหน่วย
-            <input
-              type="number"
-              step="any"
-              name="units"
-              required
-              className="rounded-md border border-black/15 px-3 py-2 dark:border-white/20 dark:bg-transparent"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            ราคา/NAV ต่อหน่วย
-            <input
-              type="number"
-              step="any"
-              name="pricePerUnit"
-              required
-              className="rounded-md border border-black/15 px-3 py-2 dark:border-white/20 dark:bg-transparent"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            หมายเหตุ (ถ้ามี)
-            <input
-              name="note"
-              className="rounded-md border border-black/15 px-3 py-2 dark:border-white/20 dark:bg-transparent"
-            />
-          </label>
-          <button
-            type="submit"
-            className="sm:col-span-2 rounded-md bg-black py-2.5 font-medium text-white dark:bg-white dark:text-black"
-          >
-            บันทึกธุรกรรม
-          </button>
-        </form>
+        <TransactionForm assets={assets} />
       </section>
 
-      <section>
-        <h2 className="mb-3 text-lg font-semibold">ประวัติธุรกรรม</h2>
+      <section className="space-y-4">
+        <div className="flex items-center justify-between gap-4">
+          <h2 className="text-lg font-semibold">ประวัติธุรกรรม</h2>
+          <AssetFilter assets={assets} />
+        </div>
+
+        {filterAsset?.type === "fund" && (
+          <div className="rounded-lg border border-black/10 p-4 dark:border-white/10">
+            <p className="mb-2 text-sm font-medium">
+              เทียบธุรกรรมกับดัชนี NAV ของ {filterAsset.name}
+            </p>
+            <FundPriceChart assetId={filterAsset.id} fundLog={fundLog} transactions={transactions} />
+          </div>
+        )}
+
         {sorted.length === 0 ? (
           <p className="text-sm text-black/60 dark:text-white/60">
             ยังไม่มีธุรกรรม
@@ -117,6 +72,8 @@ export default async function TransactionsPage() {
                   <th className="py-2 pr-4 text-right">จำนวนหน่วย</th>
                   <th className="py-2 pr-4 text-right">ราคา/หน่วย</th>
                   <th className="py-2 pr-4 text-right">มูลค่ารวม</th>
+                  <th className="py-2 pr-4">หมายเหตุ</th>
+                  <th className="py-2 pr-4"></th>
                 </tr>
               </thead>
               <tbody>
@@ -140,6 +97,12 @@ export default async function TransactionsPage() {
                     </td>
                     <td className="py-2 pr-4 text-right">
                       {formatMoney(t.totalValue)}
+                    </td>
+                    <td className="py-2 pr-4 text-black/60 dark:text-white/60">
+                      {t.note}
+                    </td>
+                    <td className="py-2 pr-4 text-right">
+                      <DeleteTransactionButton transactionId={t.id} />
                     </td>
                   </tr>
                 ))}

@@ -71,3 +71,31 @@ npm run dev
 5. **ประวัติ** — ดูกราฟแนวโน้มมูลค่าพอร์ตย้อนหลัง
 
 ข้อมูลทั้งหมดเก็บอยู่ในไฟล์ Google Sheets ชื่อ "Investment Tracker Data" ในไดรฟ์ของคุณ เปิดดูข้อมูลดิบได้ตลอดเวลา
+
+---
+
+## ดึงราคาอัตโนมัติรายวัน (ไม่ต้องเปิดเว็บเอง)
+
+หน้า "อัปเดตราคา" มีปุ่ม "ดึงราคาล่าสุด" ให้กดเองได้อยู่แล้ว แต่ถ้าอยากให้ระบบดึงราคา + บันทึกสแนปช็อตให้อัตโนมัติทุกวัน (เช่น ตอน 8:00 น.) โดยไม่ต้องเปิดเว็บเอง ทำตามนี้:
+
+**ข้อจำกัด**: วิธีนี้ใช้ได้เฉพาะตอนที่ `npm run dev` (หรือ `npm start` ถ้า build แล้ว) กำลังรันอยู่บนเครื่องนี้เท่านั้น ถ้าปิดเครื่อง/ปิดเซิร์ฟเวอร์ตอน 8 โมง งานจะไม่ทำงานวันนั้น ถ้าต้องการให้ทำงานแน่นอนทุกวันแม้ปิดเครื่อง ต้อง deploy ขึ้น Vercel แล้วใช้ Vercel Cron แทน (ดูหัวข้อ deploy ด้านบน)
+
+### ขั้นตอนที่ 1: เอา Refresh Token มาใส่ (ทำครั้งเดียว)
+
+1. ใส่ `DEBUG_PRINT_REFRESH_TOKEN=true` ใน `.env.local`
+2. รัน `npm run dev` แล้วล็อกเอาต์ + ล็อกอินใหม่อีกครั้งด้วย Gmail ของคุณ (ต้องเป็นการล็อกอินใหม่จริงๆ ถึงจะได้ refresh token)
+3. ดูที่ terminal ที่รัน `npm run dev` จะมีบรรทัด `[DEBUG_PRINT_REFRESH_TOKEN] Google refresh token: ...` — คัดลอกค่านั้นไปใส่ `GOOGLE_REFRESH_TOKEN=` ใน `.env.local`
+4. ลบบรรทัด `DEBUG_PRINT_REFRESH_TOKEN=true` ออกจาก `.env.local` (ไม่ต้องใช้อีกแล้ว)
+5. ใส่ `CRON_SECRET=` ตามด้วยรหัสยาวๆ ที่สุ่มขึ้นมาเอง (ห้ามให้ใครรู้)
+6. รัน `npm run dev` ใหม่อีกครั้งให้ค่าที่แก้มีผล
+
+### ขั้นตอนที่ 2: ตั้งเวลาให้เรียกอัตโนมัติทุกวัน 8:00 น. (Windows Task Scheduler)
+
+เปิด Task Scheduler แล้วสร้าง Basic Task ใหม่ ตั้งให้รันทุกวันเวลา 8:00 น. โดย Action เป็น "Start a program":
+- Program/script: `powershell.exe`
+- Add arguments:
+  ```
+  -Command "Invoke-RestMethod -Uri 'http://localhost:3000/api/cron/fetch-prices' -Headers @{Authorization='Bearer <CRON_SECRET ของคุณ>'}"
+  ```
+
+ทดสอบก่อนได้โดยรันคำสั่ง PowerShell ด้านบนเองตอนที่ `npm run dev` กำลังรันอยู่ ถ้าสำเร็จจะได้ผลลัพธ์ JSON กลับมาแสดงรายการราคาที่ดึงได้
