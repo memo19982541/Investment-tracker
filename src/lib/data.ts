@@ -233,6 +233,7 @@ export async function getSnapshots(
       totalCost: Number(r.totalCost),
       byCategoryJson: r.byCategoryJson,
       createdAt: r.createdAt,
+      manual: r.manual === "true",
     })
   );
 }
@@ -308,7 +309,8 @@ export async function recordSnapshotAndFundLog(
   spreadsheetId: string,
   assets: Asset[],
   transactions: Transaction[],
-  prices: Record<string, PriceEntry>
+  prices: Record<string, PriceEntry>,
+  manual = false
 ) {
   const allHoldings = computeHoldings(assets, transactions, prices);
   const heldHoldings = allHoldings.filter((h) => h.units > 0.0001);
@@ -351,6 +353,7 @@ export async function recordSnapshotAndFundLog(
       totalValue: total.value,
       totalCost: total.cost,
       byCategoryJson: JSON.stringify(byCurrency.get(currency) ?? {}),
+      manual,
     });
   }
 
@@ -374,53 +377,68 @@ export async function recordSnapshotAndFundLog(
   );
 }
 
-const SNAPSHOT_CHANGE_EPSILON = 0.01;
+/** Sunday=0 ... Saturday=6, for an ISO "YYYY-MM-DD" date string, in UTC (snapshot dates have no time component). */
+function isKeeperDayOfWeek(date: string): boolean {
+  const day = new Date(`${date}T00:00:00Z`).getUTCDay();
+  return day === 3 || day === 6; // Wednesday or Saturday
+}
 
 /**
- * Like `recordSnapshotAndFundLog`, but skips writing anything if today's
- * per-currency totals are identical (within a cent) to the most recent
- * prior snapshot — used by the daily cron so it doesn't pile up duplicate
- * history points on days a Thai fund's NAV hasn't actually been
- * republished yet. The manual "save snapshot" button on /prices always
- * calls `recordSnapshotAndFundLog` directly and writes unconditionally,
- * since clicking it is itself a signal the user wants a checkpoint.
+ * Deletes past (before today) snapshot rows that are neither a keeper
+ * day-of-week (Wednesday/Saturday) nor flagged `manual: true`. Run after
+ * the daily cron writes today's snapshot, so history settles into roughly
+ * two points a week instead of piling up a duplicate for every day a Thai
+ * fund's NAV hasn't actually been republished — while never touching a
+ * manually-saved checkpoint or anything from today itself.
+ *
+ * Only prunes `snapshots` (the chart/total-value history), not `fundLog`
+ * (the per-asset price/units history) — fundLog stays daily on purpose, so
+ * price-history lookups (no-trade baseline, backfill) keep full precision.
  */
-export async function recordSnapshotAndFundLogIfChanged(
+export async function pruneNonKeeperSnapshots(accessToken: string, spreadsheetId: string) {
+  const today = new Date().toISOString().slice(0, 10);
+  const snapshots = await getSnapshots(accessToken, spreadsheetId);
+  const toDelete = new Set(
+    snapshots
+      .filter((s) => s.date < today && !s.manual && !isKeeperDayOfWeek(s.date))
+      .map((s) => `${s.date}|${s.currency}`)
+  );
+  if (toDelete.size === 0) return { pruned: 0 };
+
+  await deleteRowsWhere(accessToken, spreadsheetId, "snapshots", (row) =>
+    toDelete.has(`${row[0]}|${row[1]}`)
+  );
+  return { pruned: toDelete.size };
+}
+
+/**
+ * One-time migration: marks every existing snapshot row dated on or before
+ * `cutoffDate` as `manual: true`, so `pruneNonKeeperSnapshots` never deletes
+ * history recorded before that pruning feature existed. Without this, the
+ * very first cron run after the feature ships would delete nearly the
+ * entire chart history, since none of those older rows carry any "keeper"
+ * marker and most weren't recorded on a Wednesday/Saturday.
+ */
+export async function markHistoricalSnapshotsManual(
   accessToken: string,
   spreadsheetId: string,
-  assets: Asset[],
-  transactions: Transaction[],
-  prices: Record<string, PriceEntry>
-): Promise<{ recorded: boolean }> {
-  const heldHoldings = computeHoldings(assets, transactions, prices).filter(
-    (h) => h.units > 0.0001
+  cutoffDate: string
+) {
+  const snapshots = await getSnapshots(accessToken, spreadsheetId);
+  const toMigrate = snapshots.filter((s) => s.date <= cutoffDate && !s.manual);
+  if (toMigrate.length === 0) return { migrated: 0 };
+
+  const keySet = new Set(toMigrate.map((s) => `${s.date}|${s.currency}`));
+  await deleteRowsWhere(accessToken, spreadsheetId, "snapshots", (row) =>
+    keySet.has(`${row[0]}|${row[1]}`)
   );
-
-  const totals = new Map<Snapshot["currency"], number>();
-  for (const h of heldHoldings) {
-    const currency = h.asset.currency;
-    totals.set(currency, (totals.get(currency) ?? 0) + h.currentValue);
-  }
-
-  const today = new Date().toISOString().slice(0, 10);
-  const existingSnapshots = await getSnapshots(accessToken, spreadsheetId);
-  const latestByCurrency = new Map<Snapshot["currency"], Snapshot>();
-  for (const s of existingSnapshots) {
-    if (s.date >= today) continue;
-    const prev = latestByCurrency.get(s.currency);
-    if (!prev || s.date > prev.date) latestByCurrency.set(s.currency, s);
-  }
-
-  const anyChanged = [...totals.entries()].some(([currency, value]) => {
-    const prev = latestByCurrency.get(currency);
-    if (!prev) return true;
-    return Math.abs(prev.totalValue - value) > SNAPSHOT_CHANGE_EPSILON;
-  });
-
-  if (!anyChanged) return { recorded: false };
-
-  await recordSnapshotAndFundLog(accessToken, spreadsheetId, assets, transactions, prices);
-  return { recorded: true };
+  await appendRows(
+    accessToken,
+    spreadsheetId,
+    "snapshots",
+    toMigrate.map((s) => ({ ...s, manual: true }))
+  );
+  return { migrated: toMigrate.length };
 }
 
 /**

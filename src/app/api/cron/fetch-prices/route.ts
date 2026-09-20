@@ -4,12 +4,10 @@ import { runDailyPriceUpdate } from "@/lib/priceFetchJob";
 
 /**
  * Unattended daily price update, meant to be triggered by an external
- * scheduler (Vercel Cron). Always refreshes the current-price cache; only
- * records a new snapshot/fundLog history point if something actually
- * changed since the last one (see `recordSnapshotAndFundLogIfChanged`) —
- * avoids piling up duplicate points on days a Thai fund's NAV hasn't been
- * republished yet, while still catching every real price or portfolio
- * change (e.g. a US stock moving, or a transaction being entered).
+ * scheduler (Vercel Cron). Refreshes the current-price cache and records
+ * today's snapshot/fundLog unconditionally, then prunes past snapshot rows
+ * that aren't a keeper day (Wednesday/Saturday) or manually saved — see
+ * `runDailyPriceUpdate`/`pruneNonKeeperSnapshots`.
  */
 export async function GET(request: Request) {
   const auth = await authenticateCronRequest(request);

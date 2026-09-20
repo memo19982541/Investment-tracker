@@ -33,6 +33,7 @@ export const SHEET_TABS = {
     "totalCost",
     "byCategoryJson",
     "createdAt",
+    "manual",
   ],
   fundLog: [
     "date",

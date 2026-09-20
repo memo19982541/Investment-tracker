@@ -37,7 +37,8 @@ export async function updatePrices(formData: FormData) {
     spreadsheetId,
     assets,
     transactions,
-    prices
+    prices,
+    true
   );
 
   revalidatePath("/prices");

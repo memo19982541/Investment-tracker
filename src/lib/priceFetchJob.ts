@@ -2,7 +2,8 @@ import {
   getAssets,
   getPrices,
   getTransactions,
-  recordSnapshotAndFundLogIfChanged,
+  pruneNonKeeperSnapshots,
+  recordSnapshotAndFundLog,
   setPrice,
 } from "./data";
 import { fetchFundNav, fetchStockPrice } from "./priceSource";
@@ -53,12 +54,12 @@ export async function runFetchLatestPrices(
 }
 
 /**
- * Full daily update: fetch latest prices, then record today's snapshot and
- * fundLog entries — but only if the resulting totals actually differ from
- * the last recorded snapshot. Thai fund NAVs are republished with a
- * multi-day lag, so most days nothing has really changed; skipping those
- * keeps the history free of duplicate points while still capturing every
- * day something (a price or a transaction) genuinely moved.
+ * Full daily update: fetch latest prices, record today's snapshot and
+ * fundLog entries unconditionally (fundLog needs a daily row regardless of
+ * whether anything changed, for accurate price-history lookups), then prune
+ * past non-keeper-day snapshots (anything not Wednesday/Saturday and not
+ * manually saved) so the chart settles into roughly two points a week
+ * instead of piling up duplicates from Thai funds' multi-day NAV lag.
  */
 export async function runDailyPriceUpdate(accessToken: string, spreadsheetId: string) {
   const fetchResult = await runFetchLatestPrices(accessToken, spreadsheetId);
@@ -68,13 +69,8 @@ export async function runDailyPriceUpdate(accessToken: string, spreadsheetId: st
     getTransactions(accessToken, spreadsheetId),
     getPrices(accessToken, spreadsheetId),
   ]);
-  const { recorded } = await recordSnapshotAndFundLogIfChanged(
-    accessToken,
-    spreadsheetId,
-    assets,
-    transactions,
-    prices
-  );
+  await recordSnapshotAndFundLog(accessToken, spreadsheetId, assets, transactions, prices, false);
+  const { pruned } = await pruneNonKeeperSnapshots(accessToken, spreadsheetId);
 
-  return { ...fetchResult, snapshotRecorded: recorded };
+  return { ...fetchResult, snapshotPruned: pruned };
 }

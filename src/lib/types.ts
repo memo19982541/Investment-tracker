@@ -52,6 +52,13 @@ export interface Snapshot {
   totalCost: number;
   byCategoryJson: string;
   createdAt: string;
+  /**
+   * true = exempt from the daily cron's weekend-retention pruning (kept
+   * forever regardless of day-of-week). Set on rows written by the manual
+   * "save snapshot" button, and on historical rows predating the pruning
+   * feature. Cron-written rows default to false/omitted.
+   */
+  manual?: boolean;
 }
 
 export interface Holding {
