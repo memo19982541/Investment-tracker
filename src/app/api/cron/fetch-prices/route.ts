@@ -1,34 +1,20 @@
 import { NextResponse } from "next/server";
-import { getSpreadsheetId } from "@/lib/data";
-import { getAccessTokenFromRefreshToken } from "@/lib/googleAuth";
-import { runDailyPriceUpdate } from "@/lib/priceFetchJob";
+import { authenticateCronRequest } from "@/lib/cronAuth";
+import { runFetchLatestPrices } from "@/lib/priceFetchJob";
 
 /**
- * Unattended daily price update, meant to be triggered by an external
- * scheduler (Windows Task Scheduler locally, or Vercel Cron once deployed)
- * — not by a signed-in browser, so it authenticates via a long-lived
- * refresh token instead of a session, and checks a shared secret instead of
- * a login.
+ * Unattended daily price refresh, meant to be triggered by an external
+ * scheduler (Vercel Cron) — updates the "current price" cache only, no
+ * snapshot. Runs daily since prices should stay fresh every day even
+ * though Thai fund NAVs themselves only change every few days; snapshot
+ * history is recorded separately, weekly, by /api/cron/weekly-snapshot.
  */
 export async function GET(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  const authHeader = request.headers.get("authorization");
-  if (!secret || authHeader !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
-  if (!refreshToken) {
-    return NextResponse.json(
-      { error: "GOOGLE_REFRESH_TOKEN is not configured" },
-      { status: 500 }
-    );
-  }
+  const auth = await authenticateCronRequest(request);
+  if (!auth.ok) return auth.response;
 
   try {
-    const accessToken = await getAccessTokenFromRefreshToken(refreshToken);
-    const spreadsheetId = await getSpreadsheetId(accessToken);
-    const result = await runDailyPriceUpdate(accessToken, spreadsheetId);
+    const result = await runFetchLatestPrices(auth.accessToken, auth.spreadsheetId);
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
     return NextResponse.json(
