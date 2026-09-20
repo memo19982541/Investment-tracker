@@ -1,4 +1,10 @@
-import { getAssets, getPrices, getTransactions, recordSnapshotAndFundLog, setPrice } from "./data";
+import {
+  getAssets,
+  getPrices,
+  getTransactions,
+  recordSnapshotAndFundLogIfChanged,
+  setPrice,
+} from "./data";
 import { fetchFundNav, fetchStockPrice } from "./priceSource";
 import type { Asset } from "./types";
 
@@ -48,10 +54,11 @@ export async function runFetchLatestPrices(
 
 /**
  * Full daily update: fetch latest prices, then record today's snapshot and
- * fundLog entries from them — the combination used by the scheduled cron
- * job (a manual click on /prices keeps fetch and save as separate steps so
- * repeated clicks in one day don't pile up snapshots; a once-a-day
- * scheduled run doesn't have that problem).
+ * fundLog entries — but only if the resulting totals actually differ from
+ * the last recorded snapshot. Thai fund NAVs are republished with a
+ * multi-day lag, so most days nothing has really changed; skipping those
+ * keeps the history free of duplicate points while still capturing every
+ * day something (a price or a transaction) genuinely moved.
  */
 export async function runDailyPriceUpdate(accessToken: string, spreadsheetId: string) {
   const fetchResult = await runFetchLatestPrices(accessToken, spreadsheetId);
@@ -61,7 +68,13 @@ export async function runDailyPriceUpdate(accessToken: string, spreadsheetId: st
     getTransactions(accessToken, spreadsheetId),
     getPrices(accessToken, spreadsheetId),
   ]);
-  await recordSnapshotAndFundLog(accessToken, spreadsheetId, assets, transactions, prices);
+  const { recorded } = await recordSnapshotAndFundLogIfChanged(
+    accessToken,
+    spreadsheetId,
+    assets,
+    transactions,
+    prices
+  );
 
-  return fetchResult;
+  return { ...fetchResult, snapshotRecorded: recorded };
 }

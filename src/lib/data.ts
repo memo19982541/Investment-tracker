@@ -374,6 +374,55 @@ export async function recordSnapshotAndFundLog(
   );
 }
 
+const SNAPSHOT_CHANGE_EPSILON = 0.01;
+
+/**
+ * Like `recordSnapshotAndFundLog`, but skips writing anything if today's
+ * per-currency totals are identical (within a cent) to the most recent
+ * prior snapshot — used by the daily cron so it doesn't pile up duplicate
+ * history points on days a Thai fund's NAV hasn't actually been
+ * republished yet. The manual "save snapshot" button on /prices always
+ * calls `recordSnapshotAndFundLog` directly and writes unconditionally,
+ * since clicking it is itself a signal the user wants a checkpoint.
+ */
+export async function recordSnapshotAndFundLogIfChanged(
+  accessToken: string,
+  spreadsheetId: string,
+  assets: Asset[],
+  transactions: Transaction[],
+  prices: Record<string, PriceEntry>
+): Promise<{ recorded: boolean }> {
+  const heldHoldings = computeHoldings(assets, transactions, prices).filter(
+    (h) => h.units > 0.0001
+  );
+
+  const totals = new Map<Snapshot["currency"], number>();
+  for (const h of heldHoldings) {
+    const currency = h.asset.currency;
+    totals.set(currency, (totals.get(currency) ?? 0) + h.currentValue);
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const existingSnapshots = await getSnapshots(accessToken, spreadsheetId);
+  const latestByCurrency = new Map<Snapshot["currency"], Snapshot>();
+  for (const s of existingSnapshots) {
+    if (s.date >= today) continue;
+    const prev = latestByCurrency.get(s.currency);
+    if (!prev || s.date > prev.date) latestByCurrency.set(s.currency, s);
+  }
+
+  const anyChanged = [...totals.entries()].some(([currency, value]) => {
+    const prev = latestByCurrency.get(currency);
+    if (!prev) return true;
+    return Math.abs(prev.totalValue - value) > SNAPSHOT_CHANGE_EPSILON;
+  });
+
+  if (!anyChanged) return { recorded: false };
+
+  await recordSnapshotAndFundLog(accessToken, spreadsheetId, assets, transactions, prices);
+  return { recorded: true };
+}
+
 /**
  * Regenerates every existing snapshots/fundLog row from the current
  * transaction history, keeping each date's own recorded prices (from its
