@@ -1,7 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { addTransaction, deleteTransaction, getAssets } from "@/lib/data";
+import {
+  addTransaction,
+  deleteTransaction,
+  getAssets,
+  getPrices,
+  getTransactions,
+  recordSnapshotAndFundLog,
+} from "@/lib/data";
 import { requireContext } from "@/lib/session";
 import type { Transaction } from "@/lib/types";
 
@@ -39,6 +46,8 @@ export async function createTransaction(formData: FormData) {
     note,
   });
 
+  await recordTodaySnapshot(accessToken, spreadsheetId, assets);
+
   revalidatePath("/transactions");
   revalidatePath("/");
 }
@@ -48,6 +57,29 @@ export async function removeTransaction(transactionId: string) {
 
   await deleteTransaction(accessToken, spreadsheetId, transactionId);
 
+  const assets = await getAssets(accessToken, spreadsheetId);
+  await recordTodaySnapshot(accessToken, spreadsheetId, assets);
+
   revalidatePath("/transactions");
   revalidatePath("/");
+}
+
+/**
+ * Re-records today's snapshot/fundLog right after a transaction is added or
+ * removed, so the dashboard's history charts (which only read from
+ * `snapshots`, not live `transactions`) reflect the change immediately
+ * instead of waiting for the next daily cron run or a manual price save.
+ * Marked `manual: true` so the next cron's weekend-retention pruning never
+ * deletes it — the user just made a real, deliberate change.
+ */
+async function recordTodaySnapshot(
+  accessToken: string,
+  spreadsheetId: string,
+  assets: Awaited<ReturnType<typeof getAssets>>
+) {
+  const [transactions, prices] = await Promise.all([
+    getTransactions(accessToken, spreadsheetId),
+    getPrices(accessToken, spreadsheetId),
+  ]);
+  await recordSnapshotAndFundLog(accessToken, spreadsheetId, assets, transactions, prices, true);
 }
