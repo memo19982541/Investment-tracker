@@ -69,8 +69,10 @@ export async function removeTransaction(transactionId: string) {
  * removed, so the dashboard's history charts (which only read from
  * `snapshots`, not live `transactions`) reflect the change immediately
  * instead of waiting for the next daily cron run or a manual price save.
- * Marked `manual: true` so the next cron's weekend-retention pruning never
- * deletes it — the user just made a real, deliberate change.
+ * NOT marked manual — this is just keeping today's point accurate, not a
+ * deliberate checkpoint, so it stays eligible for the daily cron's
+ * weekend-retention pruning like any other day. `manual: true` is reserved
+ * for the explicit "save snapshot" button on /prices.
  */
 async function recordTodaySnapshot(
   accessToken: string,
@@ -81,5 +83,5 @@ async function recordTodaySnapshot(
     getTransactions(accessToken, spreadsheetId),
     getPrices(accessToken, spreadsheetId),
   ]);
-  await recordSnapshotAndFundLog(accessToken, spreadsheetId, assets, transactions, prices, true);
+  await recordSnapshotAndFundLog(accessToken, spreadsheetId, assets, transactions, prices, false);
 }
