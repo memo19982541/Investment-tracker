@@ -72,9 +72,13 @@ export interface NoTradePoint {
   noTradeAllTime: number | null;
 }
 
-interface RealizedPnlEvent {
+export interface RealizedPnlEvent {
   date: string;
   pnl: number;
+  assetId: string;
+  units: number;
+  proceeds: number;
+  costBasis: number;
 }
 
 /**
@@ -83,9 +87,10 @@ interface RealizedPnlEvent {
  * on every sell — sale proceeds minus the average cost of the units sold.
  * Needed to separate "totalCost changed because a trade realized a
  * gain/loss" from "totalCost changed because money was actually deposited
- * or withdrawn", which the no-trade baseline must not conflate.
+ * or withdrawn", which the no-trade baseline must not conflate. Also used
+ * directly by the Analysis page to list realized sales within a period.
  */
-function computeRealizedPnlEvents(
+export function computeRealizedPnlEvents(
   transactions: Transaction[],
   assets: Asset[],
   currency: Currency
@@ -109,13 +114,34 @@ function computeRealizedPnlEvents(
       } else {
         const avgCost = units > 0 ? cost / units : 0;
         const costRemoved = avgCost * t.units;
-        events.push({ date: t.date, pnl: t.totalValue - costRemoved });
+        events.push({
+          date: t.date,
+          pnl: t.totalValue - costRemoved,
+          assetId,
+          units: t.units,
+          proceeds: t.totalValue,
+          costBasis: costRemoved,
+        });
         units -= t.units;
         cost -= costRemoved;
       }
     }
   }
   return events;
+}
+
+/** The most recent snapshot on or before `date`, or null if none exists yet. */
+export function snapshotStatsAtDate(
+  snapshots: Snapshot[],
+  currency: Currency,
+  date: string
+): { totalValue: number; totalCost: number } | null {
+  let best: Snapshot | null = null;
+  for (const s of snapshots) {
+    if (s.currency !== currency || s.date > date) continue;
+    if (!best || s.date > best.date) best = s;
+  }
+  return best ? { totalValue: best.totalValue, totalCost: best.totalCost } : null;
 }
 
 /**

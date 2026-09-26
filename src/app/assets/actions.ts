@@ -7,11 +7,13 @@ import {
   deleteAsset,
   deleteTransactionsByAsset,
   getAssets,
+  getFundLog,
   getPrices,
   getTransactions,
   sortAssetsForDisplay,
   updateAssetMeta,
 } from "@/lib/data";
+import { computeMasterFundImpliedCost, type MasterFundCostResult } from "@/lib/masterFund";
 import { requireContext } from "@/lib/session";
 import type { Asset } from "@/lib/types";
 
@@ -22,6 +24,7 @@ export async function createAsset(formData: FormData) {
   const type = String(formData.get("type") ?? "fund") as Asset["type"];
   const category = String(formData.get("category") ?? "").trim();
   const currency = String(formData.get("currency") ?? "THB") as Asset["currency"];
+  const paysDividend = formData.get("paysDividend") === "on";
 
   if (!name || !category) {
     throw new Error("กรุณากรอกชื่อและหมวดของสินทรัพย์");
@@ -33,6 +36,7 @@ export async function createAsset(formData: FormData) {
     type,
     category,
     currency,
+    paysDividend,
   });
 
   revalidatePath("/assets");
@@ -114,4 +118,66 @@ export async function setAssetHidden(assetId: string, hidden: boolean) {
   await updateAssetMeta(accessToken, spreadsheetId, assetId, { hidden });
   revalidatePath("/assets");
   revalidatePath("/");
+}
+
+export async function setAssetPaysDividend(assetId: string, paysDividend: boolean) {
+  const { accessToken, spreadsheetId } = await requireContext();
+  await updateAssetMeta(accessToken, spreadsheetId, assetId, { paysDividend });
+  revalidatePath("/assets");
+}
+
+export async function setMasterFundTicker(assetId: string, ticker: string) {
+  const { accessToken, spreadsheetId } = await requireContext();
+  const trimmed = ticker.trim().toUpperCase();
+  await updateAssetMeta(accessToken, spreadsheetId, assetId, {
+    masterFundTicker: trimmed || null,
+  });
+  revalidatePath("/assets");
+}
+
+export async function setMasterFundCurrency(assetId: string, currency: string) {
+  const { accessToken, spreadsheetId } = await requireContext();
+  const trimmed = currency.trim().toUpperCase();
+  await updateAssetMeta(accessToken, spreadsheetId, assetId, {
+    masterFundCurrency: trimmed || null,
+  });
+  revalidatePath("/assets");
+}
+
+export type { MasterFundCostResult };
+
+/**
+ * On-demand only (never auto-run on page load): fetches the master
+ * ticker's and its currency's THB exchange rate history from Yahoo Finance
+ * and calibrates the implied cost — two external network calls, too slow
+ * to do for every fund with a ticker set every time /assets renders.
+ */
+export async function getMasterFundComparison(
+  assetId: string
+): Promise<MasterFundCostResult | null> {
+  const { accessToken, spreadsheetId } = await requireContext();
+  const [assets, transactions, fundLog, prices] = await Promise.all([
+    getAssets(accessToken, spreadsheetId),
+    getTransactions(accessToken, spreadsheetId),
+    getFundLog(accessToken, spreadsheetId),
+    getPrices(accessToken, spreadsheetId),
+  ]);
+  const asset = assets.find((a) => a.id === assetId);
+  if (
+    !asset ||
+    asset.type !== "fund" ||
+    asset.currency !== "THB" ||
+    asset.paysDividend ||
+    !asset.masterFundTicker
+  ) {
+    return null;
+  }
+
+  return computeMasterFundImpliedCost(
+    asset.masterFundTicker,
+    asset.masterFundCurrency || "USD",
+    fundLog.filter((f) => f.assetId === assetId),
+    transactions.filter((t) => t.assetId === assetId),
+    prices[assetId]?.price ?? 0
+  );
 }

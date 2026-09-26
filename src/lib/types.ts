@@ -12,6 +12,18 @@ export interface Asset {
   order?: number;
   targetPct?: number;
   hidden?: boolean;
+  /** User-entered public ticker (e.g. "IVV") used as a proxy for this Thai feeder fund's underlying master fund, for estimating an implied price. */
+  masterFundTicker?: string;
+  /** Currency the master fund ticker is priced in (e.g. "USD", "JPY", "EUR") — determines which FX pair is used to convert back to THB. Defaults to "USD" when unset. */
+  masterFundCurrency?: string;
+  /**
+   * true if this fund distributes dividends instead of accumulating them
+   * into NAV — the master-fund-implied-cost estimate assumes a constant
+   * NAV-to-master-price ratio, which dividend payouts break (NAV stops
+   * tracking the master fund proportionally), so that feature is disabled
+   * for these funds.
+   */
+  paysDividend?: boolean;
 }
 
 export interface Transaction {

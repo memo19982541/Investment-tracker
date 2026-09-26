@@ -3,6 +3,8 @@ import { getAssets, getTransactions } from "@/lib/data";
 import { DEFAULT_CATEGORIES } from "@/lib/types";
 import DeleteAssetButton from "@/components/DeleteAssetButton";
 import HideAssetToggle from "@/components/HideAssetToggle";
+import MasterFundTickerCell from "@/components/MasterFundTickerCell";
+import PaysDividendToggle from "@/components/PaysDividendToggle";
 import { createAsset } from "./actions";
 
 export default async function AssetsPage() {
@@ -66,6 +68,10 @@ export default async function AssetsPage() {
               <option value="USD">ดอลลาร์ (USD)</option>
             </select>
           </label>
+          <label className="flex items-center gap-2 text-sm sm:col-span-2">
+            <input type="checkbox" name="paysDividend" className="h-4 w-4" />
+            กองทุนนี้จ่ายปันผล (ปิดการคำนวณเทียบกองทุนแม่ให้อัตโนมัติ)
+          </label>
           <button
             type="submit"
             className="sm:col-span-2 rounded-md bg-black py-2.5 font-medium text-white dark:bg-white dark:text-black"
@@ -90,6 +96,8 @@ export default async function AssetsPage() {
                   <th className="py-2 pr-4">ประเภท</th>
                   <th className="py-2 pr-4">หมวด</th>
                   <th className="py-2 pr-4">สกุลเงิน</th>
+                  <th className="py-2 pr-4">ปันผล</th>
+                  <th className="py-2 pr-4">กองทุนแม่ (ทดลอง)</th>
                   <th className="py-2 pr-4"></th>
                   <th className="py-2 pr-4"></th>
                 </tr>
@@ -119,6 +127,25 @@ export default async function AssetsPage() {
                     </td>
                     <td className="py-2 pr-4">{a.category}</td>
                     <td className="py-2 pr-4">{a.currency}</td>
+                    <td className="py-2 pr-4">
+                      {a.type === "fund" && a.currency === "THB" && (
+                        <PaysDividendToggle assetId={a.id} paysDividend={!!a.paysDividend} />
+                      )}
+                    </td>
+                    <td className="py-2 pr-4">
+                      {a.type === "fund" && a.currency === "THB" && !a.paysDividend && (
+                        <MasterFundTickerCell
+                          assetId={a.id}
+                          ticker={a.masterFundTicker}
+                          currency={a.masterFundCurrency}
+                        />
+                      )}
+                      {a.type === "fund" && a.currency === "THB" && a.paysDividend && (
+                        <span className="text-xs text-black/40 dark:text-white/40">
+                          จ่ายปันผล — คำนวณไม่ได้
+                        </span>
+                      )}
+                    </td>
                     <td className="py-2 pr-4 text-right">
                       <HideAssetToggle assetId={a.id} hidden={!!a.hidden} />
                     </td>

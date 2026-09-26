@@ -5,6 +5,7 @@ const links = [
   { href: "/", label: "แดชบอร์ด" },
   { href: "/assets", label: "สินทรัพย์" },
   { href: "/transactions", label: "ธุรกรรม" },
+  { href: "/analysis", label: "Analysis" },
   { href: "/prices", label: "อัปเดตราคา" },
   { href: "/history", label: "ประวัติ" },
   { href: "/import", label: "นำเข้าข้อมูล" },

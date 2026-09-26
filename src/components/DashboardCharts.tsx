@@ -20,6 +20,7 @@ import FundValueChart from "@/components/FundValueChart";
 import ProfitVsCostChart from "@/components/ProfitVsCostChart";
 import { buildCategorySeries, computeNoTradeSeries } from "@/lib/analytics";
 import { formatDate, formatMoney, pickEvenTicks } from "@/lib/format";
+import { cutoffDateFor, PERIOD_LABELS, type Period } from "@/lib/period";
 import type { Asset, Currency, FundLogEntry, Snapshot, Transaction } from "@/lib/types";
 
 type View =
@@ -63,23 +64,7 @@ const TIGHT_DOMAIN: [(min: number) => number, (max: number) => number] = [
   (max) => Math.ceil(max * 1.03),
 ];
 
-type Period = "1m" | "3m" | "6m" | "all";
-
-const PERIOD_LABELS: Record<Period, string> = {
-  "1m": "1 เดือน",
-  "3m": "3 เดือน",
-  "6m": "6 เดือน",
-  all: "ตั้งแต่ต้น",
-};
-
-/** Cutoff date (YYYY-MM-DD) for a period, or null for "all" (no cutoff). */
-function cutoffDateFor(period: Period): string | null {
-  if (period === "all") return null;
-  const months = { "1m": 1, "3m": 3, "6m": 6 }[period];
-  const d = new Date();
-  d.setMonth(d.getMonth() - months);
-  return d.toISOString().slice(0, 10);
-}
+const DASHBOARD_PERIODS: Period[] = ["1m", "3m", "6m", "all"];
 
 function EmptyNote({ children }: { children: ReactNode }) {
   return (
@@ -213,7 +198,7 @@ export default function DashboardCharts({
 
       {(view === "notrade" || view === "profit") && (
         <div className="flex flex-wrap gap-1.5">
-          {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => (
+          {DASHBOARD_PERIODS.map((p) => (
             <button
               key={p}
               type="button"

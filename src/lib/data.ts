@@ -37,6 +37,9 @@ export async function getAssets(accessToken: string, spreadsheetId: string) {
       order: r.order !== "" ? Number(r.order) : undefined,
       targetPct: r.targetPct !== "" ? Number(r.targetPct) : undefined,
       hidden: r.hidden === "true",
+      masterFundTicker: r.masterFundTicker || undefined,
+      paysDividend: r.paysDividend === "true",
+      masterFundCurrency: r.masterFundCurrency || undefined,
     })
   );
 }
@@ -55,7 +58,14 @@ export async function updateAssetMeta(
   accessToken: string,
   spreadsheetId: string,
   assetId: string,
-  updates: { order?: number; targetPct?: number | null; hidden?: boolean }
+  updates: {
+    order?: number;
+    targetPct?: number | null;
+    hidden?: boolean;
+    masterFundTicker?: string | null;
+    paysDividend?: boolean;
+    masterFundCurrency?: string | null;
+  }
 ) {
   const payload: Record<string, string | number> = {};
   if (updates.order !== undefined) payload.order = updates.order;
@@ -63,6 +73,16 @@ export async function updateAssetMeta(
     payload.targetPct = updates.targetPct === null ? "" : updates.targetPct;
   }
   if (updates.hidden !== undefined) payload.hidden = updates.hidden ? "true" : "false";
+  if (updates.masterFundTicker !== undefined) {
+    payload.masterFundTicker = updates.masterFundTicker === null ? "" : updates.masterFundTicker;
+  }
+  if (updates.paysDividend !== undefined) {
+    payload.paysDividend = updates.paysDividend ? "true" : "false";
+  }
+  if (updates.masterFundCurrency !== undefined) {
+    payload.masterFundCurrency =
+      updates.masterFundCurrency === null ? "" : updates.masterFundCurrency;
+  }
   await upsertRowByKey(accessToken, spreadsheetId, "assets", assetId, payload);
 }
 

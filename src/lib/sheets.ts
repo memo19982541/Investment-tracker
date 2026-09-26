@@ -13,6 +13,9 @@ export const SHEET_TABS = {
     "order",
     "targetPct",
     "hidden",
+    "masterFundTicker",
+    "paysDividend",
+    "masterFundCurrency",
   ],
   transactions: [
     "id",
