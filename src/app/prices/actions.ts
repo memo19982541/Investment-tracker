@@ -10,7 +10,11 @@ import {
   recordSnapshotAndFundLog,
   setPrice,
 } from "@/lib/data";
-import { runFetchLatestPrices, type FetchPricesResult } from "@/lib/priceFetchJob";
+import {
+  runDailyPriceUpdate,
+  runFetchLatestPrices,
+  type FetchPricesResult,
+} from "@/lib/priceFetchJob";
 import { fetchFundNavHistory } from "@/lib/priceSource";
 import { requireContext } from "@/lib/session";
 import type { FundLogEntry } from "@/lib/types";
@@ -164,6 +168,30 @@ export async function fetchLatestFundPrices(): Promise<FetchPricesResult> {
   // duplicate history points.
   revalidatePath("/prices");
   revalidatePath("/");
+
+  return result;
+}
+
+export interface DailyUpdateResult extends FetchPricesResult {
+  snapshotPruned: number;
+}
+
+/**
+ * Manual stand-in for the daily cron (fetch prices + record today's
+ * snapshot + prune non-keeper-day history) — runs under the signed-in
+ * user's own session instead of the server-side refresh token, so it works
+ * even while GOOGLE_REFRESH_TOKEN is broken/expired. Meant to be run once
+ * per day from the dashboard, first thing the user opens the app.
+ */
+export async function runDailyUpdateNow(): Promise<DailyUpdateResult> {
+  const { accessToken, spreadsheetId } = await requireContext();
+
+  const result = await runDailyPriceUpdate(accessToken, spreadsheetId);
+
+  revalidatePath("/");
+  revalidatePath("/prices");
+  revalidatePath("/analysis");
+  revalidatePath("/history");
 
   return result;
 }

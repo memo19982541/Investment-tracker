@@ -34,7 +34,21 @@ export async function authenticateCronRequest(
     };
   }
 
-  const accessToken = await getAccessTokenFromRefreshToken(refreshToken);
-  const spreadsheetId = await getSpreadsheetId(accessToken);
-  return { ok: true, accessToken, spreadsheetId };
+  try {
+    const accessToken = await getAccessTokenFromRefreshToken(refreshToken);
+    const spreadsheetId = await getSpreadsheetId(accessToken);
+    return { ok: true, accessToken, spreadsheetId };
+  } catch (err) {
+    // Most commonly a refresh token that's expired or been revoked (e.g. a
+    // Google OAuth app still in "Testing" mode issues refresh tokens that
+    // stop working after ~7 days) — surfaced as JSON instead of an
+    // uncaught crash (a bare 500 with no body) so it's diagnosable.
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        { status: 500 }
+      ),
+    };
+  }
 }

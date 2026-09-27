@@ -10,6 +10,7 @@ import {
   sortAssetsForDisplay,
 } from "@/lib/data";
 import { formatMoney, formatUnits } from "@/lib/format";
+import DailyUpdateButton from "@/components/DailyUpdateButton";
 import DashboardCharts from "@/components/DashboardCharts";
 import ReorderButtons from "@/components/ReorderButtons";
 import TargetPctInput from "@/components/TargetPctInput";
@@ -34,6 +35,7 @@ function CurrencySection({
   snapshots,
   fundLog,
   transactions,
+  showUpdateButton,
 }: {
   currency: Currency;
   holdings: Holding[];
@@ -41,6 +43,7 @@ function CurrencySection({
   snapshots: Snapshot[];
   fundLog: FundLogEntry[];
   transactions: Transaction[];
+  showUpdateButton?: boolean;
 }) {
   const totalValue = holdings.reduce((s, h) => s + h.currentValue, 0);
   const totalCost = holdings.reduce((s, h) => s + h.cost, 0);
@@ -64,7 +67,10 @@ function CurrencySection({
         <p className="text-sm text-black/60 dark:text-white/60">
           {CURRENCY_LABEL[currency]}
         </p>
-        <p className="text-4xl font-bold">{formatMoney(totalValue)}</p>
+        <div className="flex items-center justify-between gap-4">
+          <p className="text-4xl font-bold">{formatMoney(totalValue)}</p>
+          {showUpdateButton && <DailyUpdateButton />}
+        </div>
         <p className={totalPnl >= 0 ? "text-green-600" : "text-red-600"}>
           {totalPnl >= 0 ? "+" : ""}
           {formatMoney(totalPnl)} ({totalPnlPct.toFixed(2)}%)
@@ -229,7 +235,7 @@ export default async function DashboardPage() {
   return (
     <main className="mx-auto max-w-5xl space-y-12 p-6">
       {([...byCurrency.entries()] as [Currency, Holding[]][]).map(
-        ([currency, list]) => (
+        ([currency, list], i) => (
           <CurrencySection
             key={currency}
             currency={currency}
@@ -238,6 +244,7 @@ export default async function DashboardPage() {
             snapshots={snapshots}
             fundLog={fundLog}
             transactions={transactions}
+            showUpdateButton={i === 0}
           />
         )
       )}
