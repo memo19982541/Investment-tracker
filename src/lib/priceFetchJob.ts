@@ -4,7 +4,7 @@ import {
   getTransactions,
   pruneNonKeeperSnapshots,
   recordSnapshotAndFundLog,
-  setPrice,
+  setPricesBulk,
 } from "./data";
 import { fetchFundNav, fetchStockPrice } from "./priceSource";
 import type { Asset } from "./types";
@@ -34,6 +34,7 @@ export async function runFetchLatestPrices(
 
   const updated: FetchPricesResult["updated"] = [];
   const failed: FetchPricesResult["failed"] = [];
+  const priceUpdates: { assetId: string; price: number; navDate: string }[] = [];
 
   for (let i = 0; i < priceableAssets.length; i += FETCH_BATCH_SIZE) {
     const batch = priceableAssets.slice(i, i + FETCH_BATCH_SIZE);
@@ -42,13 +43,19 @@ export async function runFetchLatestPrices(
     );
     for (const { asset, nav } of results) {
       if (nav) {
-        await setPrice(accessToken, spreadsheetId, asset.id, nav.price, nav.navDate);
+        priceUpdates.push({ assetId: asset.id, price: nav.price, navDate: nav.navDate });
         updated.push({ name: asset.name, price: nav.price, navDate: nav.navDate });
       } else {
         failed.push({ name: asset.name });
       }
     }
   }
+
+  // One bulk write instead of one Sheets round-trip per asset — the
+  // per-asset version serialized ~3 API calls × 17 assets and could take
+  // 25-30s, risking a foreground button click exceeding the serverless
+  // function's execution timeout.
+  await setPricesBulk(accessToken, spreadsheetId, priceUpdates);
 
   return { updated, failed };
 }

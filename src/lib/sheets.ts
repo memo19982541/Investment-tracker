@@ -276,6 +276,63 @@ export async function upsertRowByKey(
   });
 }
 
+/**
+ * Same as calling `upsertRowByKey` once per entry in `updatesByKey`, but
+ * does it with a single read + a single write instead of ~3 Sheets API
+ * round-trips per key — upserting N rows one-at-a-time serializes N×3
+ * round-trips, which is slow enough (17 assets ≈ 25-30s) to risk exceeding
+ * a serverless function's execution timeout when triggered from a
+ * foreground button click.
+ */
+export async function upsertRowsByKeyBulk(
+  accessToken: string,
+  spreadsheetId: string,
+  tab: TabName,
+  updatesByKey: Map<string, Record<string, string | number>>
+) {
+  if (updatesByKey.size === 0) return;
+  const sheets = getSheetsClient(accessToken);
+  const headers = SHEET_TABS[tab] as unknown as string[];
+
+  const dataRes = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${tab}!A2:Z`,
+  });
+  const rows = dataRes.data.values ?? [];
+
+  const rowIndexByKey = new Map<string, number>();
+  rows.forEach((r, i) => {
+    if (r[0]) rowIndexByKey.set(r[0], i);
+  });
+
+  const newRows: string[][] = [];
+  for (const [key, updates] of updatesByKey) {
+    const idx = rowIndexByKey.get(key);
+    if (idx !== undefined) {
+      const current = rows[idx];
+      rows[idx] = headers.map((h, i) =>
+        updates[h] !== undefined ? String(updates[h]) : (current[i] ?? "")
+      );
+    } else {
+      newRows.push(
+        headers.map((h, i) =>
+          i === 0 ? key : updates[h] !== undefined ? String(updates[h]) : ""
+        )
+      );
+    }
+  }
+
+  const allRows = [...rows, ...newRows];
+  if (allRows.length === 0) return;
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${tab}!A2:Z${allRows.length + 1}`,
+    valueInputOption: "RAW",
+    requestBody: { values: allRows },
+  });
+}
+
 /** Deletes the row whose first column matches `keyValue`, if any. */
 export async function deleteRowByKey(
   accessToken: string,

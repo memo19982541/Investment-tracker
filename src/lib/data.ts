@@ -6,7 +6,9 @@ import {
   ensureSpreadsheet,
   readTable,
   upsertRowByKey,
+  upsertRowsByKeyBulk,
 } from "./sheets";
+import { todayInThailand } from "./format";
 import type {
   Asset,
   FundLogEntry,
@@ -236,6 +238,24 @@ export async function setPrice(
   });
 }
 
+/** Same as calling `setPrice` once per entry, but as a single bulk write — see `upsertRowsByKeyBulk`. */
+export async function setPricesBulk(
+  accessToken: string,
+  spreadsheetId: string,
+  updates: { assetId: string; price: number; navDate?: string }[]
+) {
+  const updatedAt = new Date().toISOString();
+  const byKey = new Map<string, Record<string, string | number>>();
+  for (const u of updates) {
+    byKey.set(u.assetId, {
+      price: u.price,
+      updatedAt,
+      ...(u.navDate ? { navDate: u.navDate } : {}),
+    });
+  }
+  await upsertRowsByKeyBulk(accessToken, spreadsheetId, "prices", byKey);
+}
+
 export async function getSnapshots(
   accessToken: string,
   spreadsheetId: string
@@ -356,7 +376,7 @@ export async function recordSnapshotAndFundLog(
     totals.set(currency, total);
   }
 
-  const date = new Date().toISOString().slice(0, 10);
+  const date = todayInThailand();
 
   // Replace any snapshot/fundLog rows already recorded today, so saving more
   // than once in the same day updates today's entry instead of piling up
@@ -416,7 +436,7 @@ function isKeeperDayOfWeek(date: string): boolean {
  * price-history lookups (no-trade baseline, backfill) keep full precision.
  */
 export async function pruneNonKeeperSnapshots(accessToken: string, spreadsheetId: string) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayInThailand();
   const snapshots = await getSnapshots(accessToken, spreadsheetId);
   const toDelete = new Set(
     snapshots

@@ -1,5 +1,11 @@
 import Link from "next/link";
 import { requireContext } from "@/lib/session";
+
+// The "ดึงราคาล่าสุด" button's server action fetches NAV/prices for every
+// asset from settrade.com/Yahoo Finance, which is network-bound and can
+// take a while — extend past the platform's default function timeout so a
+// foreground click doesn't get killed mid-request.
+export const maxDuration = 60;
 import {
   computeHoldings,
   getAssets,

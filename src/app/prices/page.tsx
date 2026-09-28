@@ -4,6 +4,10 @@ import { formatDate } from "@/lib/format";
 import FetchPricesButton from "@/components/FetchPricesButton";
 import { updatePrices } from "./actions";
 
+// Fetching prices for every asset is network-bound and can take a while —
+// extend past the platform's default function timeout.
+export const maxDuration = 60;
+
 export default async function PricesPage() {
   const { accessToken, spreadsheetId } = await requireContext();
   const [allAssets, prices] = await Promise.all([
