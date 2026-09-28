@@ -18,10 +18,9 @@ export async function createTransaction(formData: FormData) {
   const assetId = String(formData.get("assetId") ?? "");
   const date = String(formData.get("date") ?? "");
   const type = String(formData.get("type") ?? "buy") as Transaction["type"];
-  const units = Number(formData.get("units"));
   const note = String(formData.get("note") ?? "");
 
-  if (!assetId || !date || !units) {
+  if (!assetId || !date) {
     throw new Error("กรุณากรอกข้อมูลให้ครบถ้วน");
   }
 
@@ -36,13 +35,31 @@ export async function createTransaction(formData: FormData) {
     throw new Error("กรุณากรอกข้อมูลให้ครบถ้วน");
   }
 
+  // Some brokers only report the total baht amount of a trade, not the
+  // exact units — let the total value drive units/pricePerUnit instead,
+  // for whichever side the form actually collected.
+  const rawTotalValue = formData.get("totalValue");
+  let units: number;
+  let totalValue: number;
+  if (rawTotalValue !== null && rawTotalValue !== "") {
+    totalValue = Number(rawTotalValue);
+    units = totalValue / pricePerUnit;
+  } else {
+    units = Number(formData.get("units"));
+    totalValue = units * pricePerUnit;
+  }
+
+  if (!units || !totalValue) {
+    throw new Error("กรุณากรอกข้อมูลให้ครบถ้วน");
+  }
+
   await addTransaction(accessToken, spreadsheetId, {
     assetId,
     date,
     type,
     units,
     pricePerUnit,
-    totalValue: units * pricePerUnit,
+    totalValue,
     note,
   });
 

@@ -2,10 +2,14 @@
 
 import { useMemo, useState } from "react";
 import { createTransaction } from "@/app/transactions/actions";
+import { todayInThailand } from "@/lib/format";
 import type { Asset } from "@/lib/types";
+
+type AmountMode = "units" | "totalValue";
 
 export default function TransactionForm({ assets }: { assets: Asset[] }) {
   const [assetId, setAssetId] = useState(assets[0]?.id ?? "");
+  const [amountMode, setAmountMode] = useState<AmountMode>("units");
   const assetById = useMemo(() => new Map(assets.map((a) => [a.id, a])), [assets]);
   const isCash = assetById.get(assetId)?.type === "cash";
 
@@ -46,33 +50,73 @@ export default function TransactionForm({ assets }: { assets: Asset[] }) {
           type="date"
           name="date"
           required
-          defaultValue={new Date().toISOString().slice(0, 10)}
-          className="rounded-md border border-black/15 px-3 py-2 dark:border-white/20 dark:bg-transparent"
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-sm">
-        {isCash ? "จำนวนเงิน" : "จำนวนหน่วย"}
-        <input
-          type="number"
-          step="any"
-          name="units"
-          required
+          defaultValue={todayInThailand()}
           className="rounded-md border border-black/15 px-3 py-2 dark:border-white/20 dark:bg-transparent"
         />
       </label>
       {isCash ? (
-        <input type="hidden" name="pricePerUnit" value="1" />
-      ) : (
         <label className="flex flex-col gap-1 text-sm">
-          ราคา/NAV ต่อหน่วย
+          จำนวนเงิน
           <input
             type="number"
             step="any"
-            name="pricePerUnit"
+            name="units"
             required
             className="rounded-md border border-black/15 px-3 py-2 dark:border-white/20 dark:bg-transparent"
           />
         </label>
+      ) : (
+        <label className="flex flex-col gap-1 text-sm">
+          กรอกโดย
+          <select
+            value={amountMode}
+            onChange={(e) => setAmountMode(e.target.value as AmountMode)}
+            className="rounded-md border border-black/15 px-3 py-2 dark:border-white/20 dark:bg-transparent"
+          >
+            <option value="units">จำนวนหน่วย</option>
+            <option value="totalValue">มูลค่ารวม (บาท)</option>
+          </select>
+        </label>
+      )}
+      {isCash ? (
+        <input type="hidden" name="pricePerUnit" value="1" />
+      ) : (
+        <>
+          {amountMode === "units" ? (
+            <label className="flex flex-col gap-1 text-sm">
+              จำนวนหน่วย
+              <input
+                type="number"
+                step="any"
+                name="units"
+                required
+                className="rounded-md border border-black/15 px-3 py-2 dark:border-white/20 dark:bg-transparent"
+              />
+            </label>
+          ) : (
+            <label className="flex flex-col gap-1 text-sm">
+              มูลค่ารวม (บาท)
+              <input
+                type="number"
+                step="any"
+                name="totalValue"
+                required
+                placeholder="เช่น broker แจ้งแค่ยอดเงิน ไม่บอกจำนวนหน่วย"
+                className="rounded-md border border-black/15 px-3 py-2 dark:border-white/20 dark:bg-transparent"
+              />
+            </label>
+          )}
+          <label className="flex flex-col gap-1 text-sm">
+            ราคา/NAV ต่อหน่วย
+            <input
+              type="number"
+              step="any"
+              name="pricePerUnit"
+              required
+              className="rounded-md border border-black/15 px-3 py-2 dark:border-white/20 dark:bg-transparent"
+            />
+          </label>
+        </>
       )}
       <label className="flex flex-col gap-1 text-sm">
         หมายเหตุ (ถ้ามี)
