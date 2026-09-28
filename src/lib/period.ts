@@ -1,3 +1,5 @@
+import { todayInThailand } from "./format";
+
 export type Period = "1m" | "3m" | "6m" | "1y" | "all";
 
 export const PERIOD_LABELS: Record<Period, string> = {
@@ -12,7 +14,11 @@ export const PERIOD_LABELS: Record<Period, string> = {
 export function cutoffDateFor(period: Period): string | null {
   if (period === "all") return null;
   const months = { "1m": 1, "3m": 3, "6m": 6, "1y": 12 }[period];
-  const d = new Date();
-  d.setMonth(d.getMonth() - months);
-  return d.toISOString().slice(0, 10);
+  // Pure calendar-day arithmetic anchored to Thailand's current date — using
+  // Date.UTC + UTC methods here just avoids the runtime's own timezone from
+  // shifting the day, it's not claiming these instants are actually UTC.
+  const [y, m, d] = todayInThailand().split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCMonth(dt.getUTCMonth() - months);
+  return dt.toISOString().slice(0, 10);
 }

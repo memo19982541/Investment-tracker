@@ -11,6 +11,8 @@
  * (e.g. "SCBS&P500A").
  */
 
+import { todayInThailand } from "./format";
+
 const QUOTATION_RE = /\{date:"([\d-]+)T[\d:]+\+\d{2}:\d{2}",navPerUnit:(-?[\d.]+),/g;
 
 export interface FundNavPoint {
@@ -113,7 +115,7 @@ export async function fetchStockPrice(ticker: string): Promise<FundNavResult | n
   try {
     const chart = await fetchYahooChart(ticker, "range=5d&interval=1d");
     if (!chart || typeof chart.latestPrice !== "number") return null;
-    const navDate = chart.latestTime ? unixToIsoDate(chart.latestTime) : new Date().toISOString().slice(0, 10);
+    const navDate = chart.latestTime ? unixToIsoDate(chart.latestTime) : todayInThailand();
     return { price: chart.latestPrice, navDate };
   } catch {
     return null;

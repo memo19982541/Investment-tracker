@@ -1,3 +1,17 @@
+/**
+ * Today's date (YYYY-MM-DD) in Thailand local time (UTC+7), regardless of
+ * the runtime's own timezone. Vercel's servers run in UTC, so plain
+ * `new Date().toISOString().slice(0, 10)` reports YESTERDAY's date for the
+ * entire first 7 hours of each day in Thailand (e.g. it's already Monday
+ * 00:30 ICT while UTC still reads Sunday 17:30) — every place that stamps
+ * "today" onto a snapshot, prune cutoff, or default form date must use
+ * this instead, or those entries silently land on the wrong day whenever
+ * the app is used during that window.
+ */
+export function todayInThailand(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(new Date());
+}
+
 export function formatMoney(n: number) {
   return n.toLocaleString("th-TH", {
     minimumFractionDigits: 2,

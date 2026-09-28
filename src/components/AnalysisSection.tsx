@@ -15,7 +15,7 @@ import {
   YAxis,
 } from "recharts";
 import { computeRealizedPnlEvents, snapshotStatsAtDate } from "@/lib/analytics";
-import { formatDate, formatMoney, pickEvenTicks } from "@/lib/format";
+import { formatDate, formatMoney, pickEvenTicks, todayInThailand } from "@/lib/format";
 import { cutoffDateFor, PERIOD_LABELS, type Period } from "@/lib/period";
 import type { Asset, Currency, Holding, Snapshot, Transaction } from "@/lib/types";
 
@@ -50,7 +50,7 @@ export default function AnalysisSection({
 }) {
   const [period, setPeriod] = useState<Period>("3m");
 
-  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const today = useMemo(() => todayInThailand(), []);
 
   const currencySnapshots = useMemo(
     () =>
