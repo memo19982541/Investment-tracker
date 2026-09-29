@@ -1,28 +1,71 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Line,
-  LineChart,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { computeRealizedPnlEvents, snapshotStatsAtDate } from "@/lib/analytics";
-import { formatDate, formatMoney, pickEvenTicks, todayInThailand } from "@/lib/format";
+import { formatDate, formatMoney, todayInThailand } from "@/lib/format";
 import { cutoffDateFor, PERIOD_LABELS, type Period } from "@/lib/period";
 import type { Asset, Currency, Holding, Snapshot, Transaction } from "@/lib/types";
 
 const ANALYSIS_PERIODS: Period[] = ["1m", "3m", "6m", "1y"];
 
-function numberTick(v: number) {
+const CURRENCY_SYMBOL: Record<Currency, string> = { THB: "฿", USD: "$" };
+
+interface BarSegment {
+  label: string;
+  value: number;
+  color: string;
+}
+
+function money0(v: number) {
   return v.toLocaleString("th-TH", { maximumFractionDigits: 0 });
+}
+
+/** One stacked horizontal bar with a legend. Negative values get no width. */
+function StackedBar({
+  title,
+  total,
+  segments,
+  scale,
+  symbol,
+}: {
+  title: string;
+  total: number;
+  segments: BarSegment[];
+  scale: number;
+  symbol: string;
+}) {
+  return (
+    <div>
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <span className="text-sm text-black/60 dark:text-white/60">{title}</span>
+        <span className="text-lg font-semibold">
+          {symbol}
+          {money0(total)}
+        </span>
+      </div>
+      <div className="flex h-8 w-full gap-0.5 overflow-hidden rounded-lg bg-black/5 dark:bg-white/5">
+        {segments.map((seg) => (
+          <div
+            key={seg.label}
+            style={{
+              width: `${scale > 0 ? (Math.max(seg.value, 0) / scale) * 100 : 0}%`,
+              backgroundColor: seg.color,
+            }}
+          />
+        ))}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-black/70 dark:text-white/70">
+        {segments.map((seg) => (
+          <span key={seg.label} className="flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: seg.color }} />
+            {seg.label} {seg.value < 0 ? "-" : ""}
+            {symbol}
+            {money0(Math.abs(seg.value))}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function PnlText({ value, pct }: { value: number; pct?: number }) {
@@ -48,7 +91,7 @@ export default function AnalysisSection({
   snapshots: Snapshot[];
   holdings: Holding[];
 }) {
-  const [period, setPeriod] = useState<Period>("3m");
+  const [period, setPeriod] = useState<Period>("1m");
 
   const today = useMemo(() => todayInThailand(), []);
 
@@ -102,20 +145,36 @@ export default function AnalysisSection({
       ? (totalPeriodPnl / statsStart.totalValue) * 100
       : undefined;
 
-  const chartPoints = useMemo(
-    () =>
-      currencySnapshots
-        .filter((s) => !periodStart || s.date >= periodStart)
-        .map((s) => ({ date: s.date, totalValue: s.totalValue, totalCost: s.totalCost })),
-    [currencySnapshots, periodStart]
-  );
-  const chartTicks = useMemo(() => pickEvenTicks(chartPoints.map((p) => p.date)), [chartPoints]);
+  // Cost side: total cost basis (holdings + cash) split into the capital
+  // behind the open positions, gains already banked by selling in this
+  // period, and idle cash. Value side: the same total value, split into
+  // cost (plus unrealized gain carried in from before the period), the
+  // change in unrealized gain during the period, and cash.
+  const symbol = CURRENCY_SYMBOL[currency];
+  const cashValue = holdings
+    .filter((h) => h.asset.type === "cash")
+    .reduce((s, h) => s + h.currentValue, 0);
+  const investHoldings = holdings.filter((h) => h.asset.type !== "cash");
+  const investCost = investHoldings.reduce((s, h) => s + h.cost, 0);
+  const investValue = investHoldings.reduce((s, h) => s + h.currentValue, 0);
+  const unrealizedPeriod = pnlStart != null ? investValue - investCost - pnlStart : 0;
+  const costSegments: BarSegment[] = [
+    { label: "ต้นทุน", value: investCost - realizedTotal, color: "#5b8def" },
+    { label: "Realized", value: realizedTotal, color: "#34c790" },
+    { label: "เงินสด", value: cashValue, color: "#9b87dd" },
+  ];
+  const valueSegments: BarSegment[] = [
+    { label: "ต้นทุน", value: investValue - unrealizedPeriod, color: "#d4a84f" },
+    { label: "Unrealized", value: unrealizedPeriod, color: "#ee6a6a" },
+    { label: "เงินสด", value: cashValue, color: "#9b87dd" },
+  ];
+  const positive = (segs: BarSegment[]) => segs.reduce((s, x) => s + Math.max(x.value, 0), 0);
+  const barScale = Math.max(positive(costSegments), positive(valueSegments));
 
   const sortedHoldings = useMemo(
     () => [...holdings].sort((a, b) => b.pnl - a.pnl),
     [holdings]
   );
-  const barData = sortedHoldings.map((h) => ({ name: h.asset.name, pnl: h.pnl }));
 
   const assetName = (id: string) => assets.find((a) => a.id === id)?.name ?? id;
 
@@ -191,27 +250,28 @@ export default function AnalysisSection({
         </div>
       </div>
 
-      {chartPoints.length > 0 && (
-        <div className="h-64 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartPoints} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="currentColor" opacity={0.1} />
-              <XAxis dataKey="date" ticks={chartTicks} fontSize={12} stroke="currentColor" opacity={0.6} tickFormatter={formatDate} />
-              <YAxis fontSize={12} stroke="currentColor" opacity={0.6} width={70} tickFormatter={numberTick} />
-              <Tooltip
-                labelFormatter={(label) => formatDate(String(label))}
-                formatter={(value) =>
-                  typeof value === "number"
-                    ? value.toLocaleString("th-TH", { maximumFractionDigits: 2 })
-                    : value
-                }
-              />
-              <Line type="monotone" dataKey="totalValue" name="มูลค่าพอร์ต" stroke="#2563eb" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="totalCost" name="ทุน" stroke="#dc2626" strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
+      <div className="space-y-6 rounded-2xl border border-black/10 p-5 dark:border-white/10">
+        <div>
+          <h3 className="text-base font-semibold">มูลค่าเงินลงทุนเทียบมูลค่าปัจจุบัน</h3>
+          <p className="text-sm text-black/50 dark:text-white/50">
+            พอร์ตรวม · รวมเงินสด · ช่วง {PERIOD_LABELS[period]}
+          </p>
         </div>
-      )}
+        <StackedBar
+          title="ต้นทุนสะสม"
+          total={investCost + cashValue}
+          segments={costSegments}
+          scale={barScale}
+          symbol={symbol}
+        />
+        <StackedBar
+          title="มูลค่าปัจจุบัน (ต้นทุน + Unrealized)"
+          total={investValue + cashValue}
+          segments={valueSegments}
+          scale={barScale}
+          symbol={symbol}
+        />
+      </div>
 
       <div>
         <h3 className="mb-2 text-sm font-semibold">การขายทำกำไร/ขาดทุนในช่วงนี้</h3>
@@ -255,22 +315,6 @@ export default function AnalysisSection({
           <p className="text-sm text-black/50 dark:text-white/50">ไม่มีสินทรัพย์ที่ถืออยู่</p>
         ) : (
           <>
-            <div className="mb-4 h-64 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={barData} layout="vertical" margin={{ top: 8, right: 16, left: 8, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="currentColor" opacity={0.1} horizontal={false} />
-                  <XAxis type="number" fontSize={12} stroke="currentColor" opacity={0.6} tickFormatter={numberTick} />
-                  <YAxis type="category" dataKey="name" fontSize={11} stroke="currentColor" opacity={0.6} width={90} />
-                  <ReferenceLine x={0} stroke="currentColor" opacity={0.35} />
-                  <Tooltip formatter={(value) => (typeof value === "number" ? formatMoney(value) : value)} />
-                  <Bar dataKey="pnl" name="กำไร/ขาดทุน">
-                    {barData.map((d) => (
-                      <Cell key={d.name} fill={d.pnl >= 0 ? "#16a34a" : "#dc2626"} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
