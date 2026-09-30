@@ -11,7 +11,20 @@ export default function TransactionForm({ assets }: { assets: Asset[] }) {
   const [assetId, setAssetId] = useState(assets[0]?.id ?? "");
   const [amountMode, setAmountMode] = useState<AmountMode>("units");
   const assetById = useMemo(() => new Map(assets.map((a) => [a.id, a])), [assets]);
-  const isCash = assetById.get(assetId)?.type === "cash";
+  const selectedAsset = assetById.get(assetId);
+  const isCash = selectedAsset?.type === "cash";
+  const cashAssets = useMemo(
+    () =>
+      assets.filter(
+        (a) => a.type === "cash" && !a.hidden && a.currency === selectedAsset?.currency
+      ),
+    [assets, selectedAsset?.currency]
+  );
+  const [useCash, setUseCash] = useState(false);
+  const [cashAssetId, setCashAssetId] = useState("");
+  const effectiveCashId = cashAssets.some((a) => a.id === cashAssetId)
+    ? cashAssetId
+    : (cashAssets[0]?.id ?? "");
 
   return (
     <form
@@ -117,6 +130,32 @@ export default function TransactionForm({ assets }: { assets: Asset[] }) {
             />
           </label>
         </>
+      )}
+      {!isCash && cashAssets.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 text-sm sm:col-span-2">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={useCash}
+              onChange={(e) => setUseCash(e.target.checked)}
+            />
+            บันทึกเข้า/ออกจากเงินสดด้วย (ซื้อ = ตัดเงินสด, ขาย = เพิ่มเงินสด)
+          </label>
+          {useCash && (
+            <select
+              name="cashAssetId"
+              value={effectiveCashId}
+              onChange={(e) => setCashAssetId(e.target.value)}
+              className="rounded-md border border-black/15 px-3 py-1.5 dark:border-white/20 dark:bg-transparent"
+            >
+              {cashAssets.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
       )}
       <label className="flex flex-col gap-1 text-sm">
         หมายเหตุ (ถ้ามี)

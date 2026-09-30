@@ -63,6 +63,28 @@ export async function createTransaction(formData: FormData) {
     note,
   });
 
+  // Optionally mirror the trade on a cash asset (buy → cash withdrawal, sell
+  // → cash deposit), so it doesn't need to be logged a second time by hand.
+  const cashAssetId = String(formData.get("cashAssetId") ?? "");
+  if (cashAssetId && asset && asset.type !== "cash") {
+    const cashAsset = assets.find((a) => a.id === cashAssetId);
+    if (!cashAsset || cashAsset.type !== "cash") {
+      throw new Error("ไม่พบสินทรัพย์เงินสดที่เลือก");
+    }
+    if (cashAsset.currency !== asset.currency) {
+      throw new Error("สกุลเงินของเงินสดไม่ตรงกับสินทรัพย์");
+    }
+    await addTransaction(accessToken, spreadsheetId, {
+      assetId: cashAssetId,
+      date,
+      type: type === "buy" ? "sell" : "buy",
+      units: totalValue,
+      pricePerUnit: 1,
+      totalValue,
+      note: `${type === "buy" ? "ซื้อ" : "ขาย"} ${asset.name}`,
+    });
+  }
+
   await recordTodaySnapshot(accessToken, spreadsheetId, assets);
 
   revalidatePath("/transactions");
