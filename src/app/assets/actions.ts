@@ -178,6 +178,7 @@ export async function getMasterFundComparison(
     asset.masterFundCurrency || "USD",
     fundLog.filter((f) => f.assetId === assetId),
     transactions.filter((t) => t.assetId === assetId),
-    prices[assetId]?.price ?? 0
+    prices[assetId]?.price ?? 0,
+    prices[assetId]?.navDate
   );
 }

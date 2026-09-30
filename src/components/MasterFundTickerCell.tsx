@@ -106,7 +106,7 @@ export default function MasterFundTickerCell({
             {result.diffPct.toFixed(1)}%) — ราคาจริง {result.ticker}: {result.currency}{" "}
             {money(result.currentTickerPrice)}
           </p>
-          <p className="opacity-70">ประมาณการ อิง {result.sampleCount} จุดข้อมูล</p>
+          <p className="opacity-70">ประมาณการ อิงราคากองทุนวันที่ {result.anchorDate} เป็นจุดอ้างอิงจุดเดียว</p>
         </div>
       )}
     </div>

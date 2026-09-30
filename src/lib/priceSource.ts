@@ -123,9 +123,12 @@ export async function fetchStockPrice(ticker: string): Promise<FundNavResult | n
 }
 
 /** Daily close price history for a US stock ticker (chronological). */
-export async function fetchStockPriceHistory(ticker: string): Promise<FundNavPoint[]> {
+export async function fetchStockPriceHistory(
+  ticker: string,
+  range = "1y"
+): Promise<FundNavPoint[]> {
   try {
-    const chart = await fetchYahooChart(ticker, "range=1y&interval=1d");
+    const chart = await fetchYahooChart(ticker, `range=${range}&interval=1d`);
     if (!chart) return [];
     const points: FundNavPoint[] = [];
     chart.timestamps.forEach((ts, i) => {
