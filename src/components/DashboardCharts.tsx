@@ -52,6 +52,12 @@ const SERIES_COLORS = [
   "#db2777",
 ];
 
+// Distinct colour per slice: hue steps by the golden angle so neighbours never
+// look alike and no colour repeats however many funds there are.
+function sliceColor(i: number) {
+  return `hsl(${Math.round((i * 137.508) % 360)}, 65%, ${i % 2 === 0 ? 50 : 62}%)`;
+}
+
 function numberTick(v: number) {
   return v.toLocaleString("th-TH", { maximumFractionDigits: 0 });
 }
@@ -64,6 +70,14 @@ const TIGHT_DOMAIN: [(min: number) => number, (max: number) => number] = [
   (max) => Math.ceil(max * 1.03),
 ];
 
+type ProfitSeriesMode = "both" | "month" | "allTime";
+
+const PROFIT_SERIES_LABELS: Record<ProfitSeriesMode, string> = {
+  both: "เทียบทั้งสอง",
+  month: "ไม่เทรดรายเดือน",
+  allTime: "ไม่เทรดตั้งแต่ต้น",
+};
+
 const DASHBOARD_PERIODS: Period[] = ["1m", "3m", "6m", "all"];
 
 function EmptyNote({ children }: { children: ReactNode }) {
@@ -71,6 +85,28 @@ function EmptyNote({ children }: { children: ReactNode }) {
     <p className="py-10 text-center text-sm text-black/50 dark:text-white/50">
       {children}
     </p>
+  );
+}
+
+/** Legend in the same order as the slices (= dashboard order), colour-matched, with each share. */
+function AllocationLegend({ items }: { items: { name: string; value: number }[] }) {
+  const total = items.reduce((sum, x) => sum + x.value, 0);
+  if (total <= 0) return null;
+  return (
+    <ul className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+      {items.map((x, i) => (
+        <li key={x.name} className="flex items-center gap-2">
+          <span
+            className="inline-block h-3 w-3 shrink-0 rounded-sm"
+            style={{ backgroundColor: sliceColor(i) }}
+          />
+          <span className="truncate">{x.name}</span>
+          <span className="ml-auto tabular-nums text-black/60 dark:text-white/60">
+            {((x.value / total) * 100).toFixed(1)}%
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -128,6 +164,10 @@ export default function DashboardCharts({
   const [selectedAssetId, setSelectedAssetId] = useState<string>("");
   const [allocationMode, setAllocationMode] = useState<"category" | "fund">("category");
 
+  const [profitMode, setProfitMode] = useState<ProfitSeriesMode>("both");
+  const showProfitMonth = profitMode !== "allTime";
+  const showProfitAllTime = profitMode !== "month";
+
   const [period, setPeriod] = useState<Period>("all");
   const cutoff = useMemo(() => cutoffDateFor(period), [period]);
 
@@ -169,13 +209,16 @@ export default function DashboardCharts({
   );
   const profitDomain = useMemo(() => {
     const values = profitSeries
-      .flatMap((p) => [p.profitVsNoTradeMonth, p.profitVsNoTradeAllTime])
+      .flatMap((p) => [
+        showProfitMonth ? p.profitVsNoTradeMonth : null,
+        showProfitAllTime ? p.profitVsNoTradeAllTime : null,
+      ])
       .filter((v): v is number => v != null);
     const min = Math.min(0, ...values);
     const max = Math.max(0, ...values);
     const pad = Math.max((max - min) * 0.1, 1);
     return { min: min - pad, max: max + pad };
-  }, [profitSeries]);
+  }, [profitSeries, showProfitMonth, showProfitAllTime]);
 
   return (
     <div className="space-y-4 rounded-lg border border-black/10 p-4 dark:border-white/10">
@@ -333,6 +376,25 @@ export default function DashboardCharts({
         </>
       )}
 
+      {view === "profit" && (
+        <div className="flex flex-wrap gap-1.5">
+          {(Object.keys(PROFIT_SERIES_LABELS) as ProfitSeriesMode[]).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setProfitMode(m)}
+              className={`rounded-full border px-2.5 py-1 text-xs ${
+                profitMode === m
+                  ? "border-black/20 font-medium dark:border-white/30"
+                  : "border-black/10 text-black/40 dark:border-white/10 dark:text-white/40"
+              }`}
+            >
+              {PROFIT_SERIES_LABELS[m]}
+            </button>
+          ))}
+        </div>
+      )}
+
       {view === "notrade" &&
         (noTradeSeries.length === 0 ? (
           <EmptyNote>ยังไม่มีข้อมูลพอที่จะเปรียบเทียบเทรดกับไม่เทรด</EmptyNote>
@@ -390,8 +452,12 @@ export default function DashboardCharts({
                   }
                 />
                 <Legend />
-                <Line type="monotone" dataKey="profitVsNoTradeMonth" name="เทียบพอร์ตถ้าไม่เทรด (รายเดือน)" stroke="#d97706" strokeWidth={2} dot={false} connectNulls />
-                <Line type="monotone" dataKey="profitVsNoTradeAllTime" name="เทียบพอร์ตถ้าไม่เทรด (ตั้งแต่ต้น)" stroke="#7c3aed" strokeWidth={2} dot={false} connectNulls />
+                {showProfitMonth && (
+                  <Line type="monotone" dataKey="profitVsNoTradeMonth" name="เทียบพอร์ตถ้าไม่เทรด (รายเดือน)" stroke="#d97706" strokeWidth={2} dot={false} connectNulls />
+                )}
+                {showProfitAllTime && (
+                  <Line type="monotone" dataKey="profitVsNoTradeAllTime" name="เทียบพอร์ตถ้าไม่เทรด (ตั้งแต่ต้น)" stroke="#7c3aed" strokeWidth={2} dot={false} connectNulls />
+                )}
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -451,7 +517,7 @@ export default function DashboardCharts({
                       (entry, i) => (
                         <Cell
                           key={"category" in entry ? entry.category : entry.name}
-                          fill={SERIES_COLORS[i % SERIES_COLORS.length]}
+                          fill={sliceColor(i)}
                         />
                       )
                     )}
@@ -462,11 +528,16 @@ export default function DashboardCharts({
                       name,
                     ]}
                   />
-                  <Legend />
                 </PieChart>
               </ResponsiveContainer>
             </div>
           )}
+          <AllocationLegend
+            items={(allocationMode === "category" ? categoryBreakdown : fundBreakdown).map((e) => ({
+              name: "category" in e ? e.category : e.name,
+              value: e.value,
+            }))}
+          />
         </>
       )}
     </div>
