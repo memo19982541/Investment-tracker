@@ -2,12 +2,14 @@
 
 import { useMemo, useState } from "react";
 import { createTransaction } from "@/app/transactions/actions";
+import { sortAssetsForPicker } from "@/lib/assetPicker";
 import { todayInThailand } from "@/lib/format";
 import type { Asset } from "@/lib/types";
 
 type AmountMode = "units" | "totalValue";
 
-export default function TransactionForm({ assets }: { assets: Asset[] }) {
+export default function TransactionForm({ assets: unsortedAssets }: { assets: Asset[] }) {
+  const assets = useMemo(() => sortAssetsForPicker(unsortedAssets), [unsortedAssets]);
   const [assetId, setAssetId] = useState(assets[0]?.id ?? "");
   const [amountMode, setAmountMode] = useState<AmountMode>("units");
   const assetById = useMemo(() => new Map(assets.map((a) => [a.id, a])), [assets]);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
+import { sortAssetsForPicker } from "@/lib/assetPicker";
 import type { Asset } from "@/lib/types";
 
 export default function AssetFilter({ assets }: { assets: Asset[] }) {
@@ -24,7 +25,7 @@ export default function AssetFilter({ assets }: { assets: Asset[] }) {
         className="rounded-md border border-black/15 px-3 py-2 dark:border-white/20 dark:bg-transparent"
       >
         <option value="">ทั้งหมด</option>
-        {assets.map((a) => (
+        {sortAssetsForPicker(assets).map((a) => (
           <option key={a.id} value={a.id}>
             {a.name}
           </option>
