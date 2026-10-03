@@ -1,5 +1,6 @@
 import { requireContext } from "@/lib/session";
 import { getAssets, getTransactions } from "@/lib/data";
+import { sortAssetsForPicker } from "@/lib/assetPicker";
 import { DEFAULT_CATEGORIES } from "@/lib/types";
 import DeleteAssetButton from "@/components/DeleteAssetButton";
 import HideAssetToggle from "@/components/HideAssetToggle";
@@ -103,7 +104,7 @@ export default async function AssetsPage() {
                 </tr>
               </thead>
               <tbody>
-                {assets.map((a) => (
+                {sortAssetsForPicker(assets).map((a) => (
                   <tr
                     key={a.id}
                     className={`border-b border-black/5 dark:border-white/5 ${
