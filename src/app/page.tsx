@@ -55,6 +55,7 @@ function CurrencySection({
   const totalCost = holdings.reduce((s, h) => s + h.cost, 0);
   const totalPnl = totalValue - totalCost;
   const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
+  const targetPctSum = holdings.reduce((s, h) => s + (h.asset.targetPct ?? 0), 0);
   const cashTotal = holdings
     .filter((h) => h.asset.type === "cash")
     .reduce((s, h) => s + h.currentValue, 0);
@@ -196,6 +197,35 @@ function CurrencySection({
               );
             })}
           </tbody>
+          <tfoot>
+            <tr className="border-t border-black/10 font-medium dark:border-white/10">
+              <td className="py-2 pr-2"></td>
+              <td className="py-2 pr-4" colSpan={7}>
+                รวม
+              </td>
+              <td className="py-2 pr-4 text-right text-black/60 dark:text-white/60">
+                {holdings
+                  .reduce((sum, h) => sum + (totalValue > 0 ? (h.currentValue / totalValue) * 100 : 0), 0)
+                  .toFixed(1)}
+                %
+              </td>
+              <td
+                className={`py-2 pr-4 text-right ${
+                  Math.abs(targetPctSum - 100) < 0.05 ? "text-green-600" : "text-amber-600"
+                }`}
+              >
+                {targetPctSum.toFixed(1)}%
+                {Math.abs(targetPctSum - 100) >= 0.05 && (
+                  <span className="block text-xs font-normal">
+                    {targetPctSum < 100
+                      ? `ขาดอีก ${(100 - targetPctSum).toFixed(1)}%`
+                      : `เกิน ${(targetPctSum - 100).toFixed(1)}%`}
+                  </span>
+                )}
+              </td>
+              <td className="py-2 pr-4"></td>
+            </tr>
+          </tfoot>
         </table>
       </div>
     </section>
