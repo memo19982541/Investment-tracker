@@ -353,7 +353,10 @@ export async function recordSnapshotAndFundLog(
   manual = false
 ) {
   const allHoldings = computeHoldings(assets, transactions, prices);
-  const heldHoldings = allHoldings.filter((h) => h.units > 0.0001);
+  // Hidden = sold out and no longer held (same rule the dashboard applies), so
+  // leftover units on a hidden asset are a calculation error and must not
+  // inflate today's total. fundLog below still logs every asset.
+  const heldHoldings = allHoldings.filter((h) => h.units > 0.0001 && !h.asset.hidden);
 
   const byCurrency = new Map<
     Snapshot["currency"],

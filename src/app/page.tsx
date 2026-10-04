@@ -15,7 +15,7 @@ import {
   getTransactions,
   sortAssetsForDisplay,
 } from "@/lib/data";
-import { formatMoney, formatUnits } from "@/lib/format";
+import { formatMoney, formatUnits, todayInThailand } from "@/lib/format";
 import DailyUpdateButton from "@/components/DailyUpdateButton";
 import DashboardCharts from "@/components/DashboardCharts";
 import ReorderButtons from "@/components/ReorderButtons";
@@ -95,6 +95,7 @@ function CurrencySection({
         snapshots={snapshots}
         fundLog={fundLog}
         transactions={transactions}
+        live={{ date: todayInThailand(), value: totalValue, cost: totalCost }}
         categoryBreakdown={[...byCategory.entries()].map(([category, v]) => ({
           category,
           value: v.value,

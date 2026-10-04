@@ -18,7 +18,11 @@ import {
 } from "recharts";
 import FundValueChart from "@/components/FundValueChart";
 import ProfitVsCostChart from "@/components/ProfitVsCostChart";
-import { buildCategorySeries, computeNoTradeSeries } from "@/lib/analytics";
+import {
+  buildCategorySeries,
+  computeNoTradeSeries,
+  type CategorySeriesPoint,
+} from "@/lib/analytics";
 import { formatDate, formatMoney, pickEvenTicks } from "@/lib/format";
 import { cutoffDateFor, PERIOD_LABELS, type Period } from "@/lib/period";
 import type { Asset, Currency, FundLogEntry, Snapshot, Transaction } from "@/lib/types";
@@ -116,6 +120,7 @@ export default function DashboardCharts({
   snapshots,
   fundLog,
   transactions,
+  live,
   categoryBreakdown,
   fundBreakdown,
 }: {
@@ -124,6 +129,12 @@ export default function DashboardCharts({
   snapshots: Snapshot[];
   fundLog: FundLogEntry[];
   transactions: Transaction[];
+  /**
+   * The dashboard's own live totals (current prices). Snapshots only move when
+   * a snapshot is saved, so the charts' final point is pinned to this value
+   * to keep the headline total and the chart in agreement.
+   */
+  live: { date: string; value: number; cost: number };
   categoryBreakdown: { category: string; value: number }[];
   fundBreakdown: { name: string; value: number }[];
 }) {
@@ -134,7 +145,7 @@ export default function DashboardCharts({
     [assets, currency]
   );
 
-  const totalPoints = useMemo(
+  const snapshotPoints = useMemo(
     () =>
       snapshots
         .filter((s) => s.currency === currency)
@@ -146,11 +157,28 @@ export default function DashboardCharts({
         })),
     [snapshots, currency]
   );
+  const totalPoints = useMemo(() => {
+    if (snapshotPoints.length === 0) return snapshotPoints;
+    const livePoint = { date: live.date, totalValue: live.value, totalCost: live.cost };
+    const last = snapshotPoints[snapshotPoints.length - 1];
+    return last.date >= live.date
+      ? [...snapshotPoints.slice(0, -1), { ...livePoint, date: last.date }]
+      : [...snapshotPoints, livePoint];
+  }, [snapshotPoints, live]);
 
-  const categorySeries = useMemo(
-    () => buildCategorySeries(snapshots, currency),
-    [snapshots, currency]
-  );
+  const categorySeries = useMemo(() => {
+    const base = buildCategorySeries(snapshots, currency);
+    if (base.points.length === 0) return base;
+    const livePoint: CategorySeriesPoint = { date: live.date };
+    for (const c of categoryBreakdown) livePoint[c.category] = c.value;
+    const last = base.points[base.points.length - 1];
+    const points =
+      last.date >= live.date
+        ? [...base.points.slice(0, -1), { ...livePoint, date: last.date }]
+        : [...base.points, livePoint];
+    const categories = [...new Set([...base.categories, ...categoryBreakdown.map((c) => c.category)])].sort();
+    return { points, categories };
+  }, [snapshots, currency, live, categoryBreakdown]);
   const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
   function toggleCategory(cat: string) {
     setHiddenCategories((prev) => {
