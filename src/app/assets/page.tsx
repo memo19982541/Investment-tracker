@@ -1,5 +1,7 @@
+import { Fragment } from "react";
 import { requireContext } from "@/lib/session";
-import { getAssets, getTransactions } from "@/lib/data";
+import { computeHoldings, getAssets, getPrices, getTransactions } from "@/lib/data";
+import { formatUnits } from "@/lib/format";
 import { sortAssetsForPicker } from "@/lib/assetPicker";
 import { DEFAULT_CATEGORIES } from "@/lib/types";
 import DeleteAssetButton from "@/components/DeleteAssetButton";
@@ -10,11 +12,15 @@ import { createAsset } from "./actions";
 
 export default async function AssetsPage() {
   const { accessToken, spreadsheetId } = await requireContext();
-  const [assets, transactions] = await Promise.all([
+  const [assets, transactions, prices] = await Promise.all([
     getAssets(accessToken, spreadsheetId),
     getTransactions(accessToken, spreadsheetId),
+    getPrices(accessToken, spreadsheetId),
   ]);
   const assetIdsWithTransactions = new Set(transactions.map((t) => t.assetId));
+  const holdingById = new Map(
+    computeHoldings(assets, transactions, prices).map((h) => [h.asset.id, h])
+  );
 
   return (
     <main className="mx-auto max-w-3xl space-y-8 p-6">
@@ -89,6 +95,7 @@ export default async function AssetsPage() {
             ยังไม่มีสินทรัพย์
           </p>
         ) : (
+          <>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -97,71 +104,95 @@ export default async function AssetsPage() {
                   <th className="py-2 pr-4">ประเภท</th>
                   <th className="py-2 pr-4">หมวด</th>
                   <th className="py-2 pr-4">สกุลเงิน</th>
-                  <th className="py-2 pr-4">ปันผล</th>
-                  <th className="py-2 pr-4">กองทุนแม่ (ทดลอง)</th>
+                  <th className="py-2 pr-4">กองทุนแม่</th>
                   <th className="py-2 pr-4"></th>
                   <th className="py-2 pr-4"></th>
                 </tr>
               </thead>
               <tbody>
-                {sortAssetsForPicker(assets).map((a) => (
-                  <tr
-                    key={a.id}
-                    className={`border-b border-black/5 dark:border-white/5 ${
-                      a.hidden ? "text-black/40 dark:text-white/40" : ""
-                    }`}
-                  >
-                    <td className="py-2 pr-4">
-                      {a.name}
-                      {a.hidden && (
-                        <span className="ml-2 rounded-full border border-black/15 px-2 py-0.5 text-[10px] dark:border-white/20">
-                          ซ่อนอยู่
-                        </span>
+                {sortAssetsForPicker(assets).map((a) => {
+                  const h = holdingById.get(a.id);
+                  // One compact detail line under each fund/stock: units held,
+                  // average cost per unit, and the latest price.
+                  const detailParts: string[] = [];
+                  if (a.type !== "cash" && h) {
+                    if (h.units > 0.0001) {
+                      detailParts.push(`จำนวนหน่วย ${formatUnits(h.units)}`);
+                      detailParts.push(`ต้นทุน/หน่วย ${formatUnits(h.cost / h.units)}`);
+                    }
+                    if (h.price > 0) detailParts.push(`ราคาล่าสุด ${formatUnits(h.price)}`);
+                  }
+                  const hasDetail = detailParts.length > 0;
+                  const tone = a.hidden ? "text-black/40 dark:text-white/40" : "";
+                  const divider = "border-b border-black/5 dark:border-white/5";
+                  return (
+                    <Fragment key={a.id}>
+                      <tr className={`${hasDetail ? "" : divider} ${tone}`}>
+                        <td className="py-2 pr-4">
+                          {a.name}
+                          {a.type === "fund" && a.currency === "THB" && (
+                            <span className="ml-1.5 align-middle">
+                              <PaysDividendToggle
+                                assetId={a.id}
+                                paysDividend={!!a.paysDividend}
+                              />
+                            </span>
+                          )}
+                          {a.hidden && (
+                            <span className="ml-2 rounded-full border border-black/15 px-2 py-0.5 text-[10px] dark:border-white/20">
+                              ซ่อนอยู่
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2 pr-4">
+                          {a.type === "fund"
+                            ? "กองทุน"
+                            : a.type === "stock"
+                              ? "หุ้น"
+                              : "เงินสด"}
+                        </td>
+                        <td className="py-2 pr-4">{a.category}</td>
+                        <td className="py-2 pr-4">{a.currency}</td>
+                        <td className="py-2 pr-4">
+                          {a.type === "fund" && a.currency === "THB" && !a.paysDividend && (
+                            <MasterFundTickerCell assetId={a.id} ticker={a.masterFundTicker} />
+                          )}
+                        </td>
+                        <td className="py-2 pr-4 text-right">
+                          <HideAssetToggle assetId={a.id} hidden={!!a.hidden} />
+                        </td>
+                        <td className="py-2 pr-4 text-right">
+                          <DeleteAssetButton
+                            assetId={a.id}
+                            assetName={a.name}
+                            hasTransactions={assetIdsWithTransactions.has(a.id)}
+                          />
+                        </td>
+                      </tr>
+                      {hasDetail && (
+                        <tr className={`${divider} ${tone}`}>
+                          <td
+                            colSpan={7}
+                            className="pb-2 text-xs text-black/50 dark:text-white/50"
+                          >
+                            <div className="sticky left-0 w-[calc(100vw-3rem)] max-w-full">
+                              {detailParts.join(" · ")}
+                            </div>
+                          </td>
+                        </tr>
                       )}
-                    </td>
-                    <td className="py-2 pr-4">
-                      {a.type === "fund"
-                        ? "กองทุน"
-                        : a.type === "stock"
-                          ? "หุ้น"
-                          : "เงินสด"}
-                    </td>
-                    <td className="py-2 pr-4">{a.category}</td>
-                    <td className="py-2 pr-4">{a.currency}</td>
-                    <td className="py-2 pr-4">
-                      {a.type === "fund" && a.currency === "THB" && (
-                        <PaysDividendToggle assetId={a.id} paysDividend={!!a.paysDividend} />
-                      )}
-                    </td>
-                    <td className="py-2 pr-4">
-                      {a.type === "fund" && a.currency === "THB" && !a.paysDividend && (
-                        <MasterFundTickerCell
-                          assetId={a.id}
-                          ticker={a.masterFundTicker}
-                          currency={a.masterFundCurrency}
-                        />
-                      )}
-                      {a.type === "fund" && a.currency === "THB" && a.paysDividend && (
-                        <span className="text-xs text-black/40 dark:text-white/40">
-                          จ่ายปันผล — คำนวณไม่ได้
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-2 pr-4 text-right">
-                      <HideAssetToggle assetId={a.id} hidden={!!a.hidden} />
-                    </td>
-                    <td className="py-2 pr-4 text-right">
-                      <DeleteAssetButton
-                        assetId={a.id}
-                        assetName={a.name}
-                        hasTransactions={assetIdsWithTransactions.has(a.id)}
-                      />
-                    </td>
-                  </tr>
-                ))}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
+          <p className="mt-3 text-xs text-black/50 dark:text-white/50">
+            <span className="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-amber-500 align-middle" />
+            = กองทุนจ่ายปันผล จึงคำนวณเทียบกองทุนแม่ไม่ได้ (NAV ไม่โตตามกองทุนแม่) — กดที่จุดหลังชื่อกองทุนเพื่อสลับสถานะ
+            จุดโปร่งจางๆ = ไม่จ่ายปันผล
+          </p>
+          </>
         )}
       </section>
     </main>

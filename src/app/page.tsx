@@ -15,9 +15,11 @@ import {
   getTransactions,
   sortAssetsForDisplay,
 } from "@/lib/data";
-import { formatMoney, formatUnits, todayInThailand } from "@/lib/format";
+import { computeDailyChange } from "@/lib/analytics";
+import { formatDate, formatMoney, todayInThailand } from "@/lib/format";
 import DailyUpdateButton from "@/components/DailyUpdateButton";
 import DashboardCharts from "@/components/DashboardCharts";
+import { CheerBust, GoalProgressBar } from "@/components/GoalProgress";
 import ReorderButtons from "@/components/ReorderButtons";
 import TargetPctInput from "@/components/TargetPctInput";
 import type {
@@ -59,6 +61,14 @@ function CurrencySection({
   const cashTotal = holdings
     .filter((h) => h.asset.type === "cash")
     .reduce((s, h) => s + h.currentValue, 0);
+  const dailyChange = computeDailyChange(
+    fundLog,
+    transactions,
+    assets,
+    currency,
+    totalPnl,
+    todayInThailand()
+  );
 
   const byCategory = new Map<string, { value: number; cost: number }>();
   for (const h of holdings) {
@@ -71,22 +81,43 @@ function CurrencySection({
   return (
     <section className="space-y-6">
       <div>
+      <div className="flex items-end gap-2 sm:gap-4">
+      <div className="min-w-0 flex-1 pb-2">
         <p className="text-sm text-black/60 dark:text-white/60">
           {CURRENCY_LABEL[currency]}
         </p>
-        <div className="flex items-center justify-between gap-4">
-          <p className="text-4xl font-bold">{formatMoney(totalValue)}</p>
-          {showUpdateButton && <DailyUpdateButton />}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <p className="text-3xl font-bold sm:text-4xl">{formatMoney(totalValue)}</p>
+          {showUpdateButton && currency !== "THB" && <DailyUpdateButton />}
         </div>
         <p className={totalPnl >= 0 ? "text-green-600" : "text-red-600"}>
           {totalPnl >= 0 ? "+" : ""}
           {formatMoney(totalPnl)} ({totalPnlPct.toFixed(2)}%)
         </p>
+        {dailyChange && (
+          <p className="mt-1 text-sm text-black/60 dark:text-white/60">
+            เปลี่ยนจากวันก่อน ({formatDate(dailyChange.prevDate)}):{" "}
+            <span className={dailyChange.change >= 0 ? "text-green-600" : "text-red-600"}>
+              {dailyChange.change >= 0 ? "+" : ""}
+              {formatMoney(dailyChange.change)} ({dailyChange.change >= 0 ? "+" : ""}
+              {dailyChange.pct.toFixed(2)}%)
+            </span>
+          </p>
+        )}
         {currency === "THB" && (
           <p className="mt-1 text-sm text-black/60 dark:text-white/60">
             เงินสดคงเหลือ: {formatMoney(cashTotal)}
           </p>
         )}
+      </div>
+      {currency === "THB" && <CheerBust />}
+      </div>
+      {currency === "THB" && (
+        <GoalProgressBar
+          value={totalValue}
+          action={showUpdateButton ? <DailyUpdateButton /> : undefined}
+        />
+      )}
       </div>
 
       <DashboardCharts
@@ -99,33 +130,13 @@ function CurrencySection({
         categoryBreakdown={[...byCategory.entries()].map(([category, v]) => ({
           category,
           value: v.value,
+          cost: v.cost,
         }))}
         fundBreakdown={holdings.map((h) => ({
           name: h.asset.name,
           value: h.currentValue,
         }))}
       />
-
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {[...byCategory.entries()].map(([cat, v]) => {
-          const pnl = v.value - v.cost;
-          return (
-            <div
-              key={cat}
-              className="rounded-lg border border-black/10 p-4 dark:border-white/10"
-            >
-              <p className="text-xs text-black/60 dark:text-white/60">{cat}</p>
-              <p className="text-lg font-semibold">{formatMoney(v.value)}</p>
-              <p
-                className={`text-xs ${pnl >= 0 ? "text-green-600" : "text-red-600"}`}
-              >
-                {pnl >= 0 ? "+" : ""}
-                {formatMoney(pnl)}
-              </p>
-            </div>
-          );
-        })}
-      </div>
 
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -134,8 +145,6 @@ function CurrencySection({
               <th className="py-2 pr-2"></th>
               <th className="py-2 pr-4">ชื่อ</th>
               <th className="py-2 pr-4">หมวด</th>
-              <th className="py-2 pr-4 text-right">จำนวนหน่วย</th>
-              <th className="py-2 pr-4 text-right">ราคาล่าสุด</th>
               <th className="py-2 pr-4 text-right">มูลค่าปัจจุบัน</th>
               <th className="py-2 pr-4 text-right">ต้นทุน</th>
               <th className="py-2 pr-4 text-right">กำไร/ขาดทุน</th>
@@ -165,8 +174,6 @@ function CurrencySection({
                   </td>
                   <td className="py-2 pr-4">{h.asset.name}</td>
                   <td className="py-2 pr-4">{h.asset.category}</td>
-                  <td className="py-2 pr-4 text-right">{formatUnits(h.units)}</td>
-                  <td className="py-2 pr-4 text-right">{formatUnits(h.price)}</td>
                   <td className="py-2 pr-4 text-right">
                     {formatMoney(h.currentValue)}
                   </td>
@@ -201,7 +208,7 @@ function CurrencySection({
           <tfoot>
             <tr className="border-t border-black/10 font-medium dark:border-white/10">
               <td className="py-2 pr-2"></td>
-              <td className="py-2 pr-4" colSpan={7}>
+              <td className="py-2 pr-4" colSpan={5}>
                 รวม
               </td>
               <td className="py-2 pr-4 text-right text-black/60 dark:text-white/60">

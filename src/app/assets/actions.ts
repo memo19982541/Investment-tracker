@@ -135,15 +135,6 @@ export async function setMasterFundTicker(assetId: string, ticker: string) {
   revalidatePath("/assets");
 }
 
-export async function setMasterFundCurrency(assetId: string, currency: string) {
-  const { accessToken, spreadsheetId } = await requireContext();
-  const trimmed = currency.trim().toUpperCase();
-  await updateAssetMeta(accessToken, spreadsheetId, assetId, {
-    masterFundCurrency: trimmed || null,
-  });
-  revalidatePath("/assets");
-}
-
 export type { MasterFundCostResult };
 
 /**

@@ -93,23 +93,43 @@ function EmptyNote({ children }: { children: ReactNode }) {
 }
 
 /** Legend in the same order as the slices (= dashboard order), colour-matched, with each share. */
-function AllocationLegend({ items }: { items: { name: string; value: number }[] }) {
+function AllocationLegend({
+  items,
+}: {
+  /** With `cost`, each row also shows its value and gain/loss (category mode). */
+  items: { name: string; value: number; cost?: number }[];
+}) {
   const total = items.reduce((sum, x) => sum + x.value, 0);
   if (total <= 0) return null;
+  const detailed = items.some((x) => x.cost !== undefined);
   return (
-    <ul className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-      {items.map((x, i) => (
-        <li key={x.name} className="flex items-center gap-2">
-          <span
-            className="inline-block h-3 w-3 shrink-0 rounded-sm"
-            style={{ backgroundColor: sliceColor(i) }}
-          />
-          <span className="truncate">{x.name}</span>
-          <span className="ml-auto tabular-nums text-black/60 dark:text-white/60">
-            {((x.value / total) * 100).toFixed(1)}%
-          </span>
-        </li>
-      ))}
+    <ul
+      className={`grid grid-cols-1 gap-x-6 gap-y-1 text-sm ${detailed ? "" : "sm:grid-cols-2"}`}
+    >
+      {items.map((x, i) => {
+        const pnl = x.cost !== undefined ? x.value - x.cost : null;
+        return (
+          <li key={x.name} className="flex items-center gap-2">
+            <span
+              className="inline-block h-3 w-3 shrink-0 rounded-sm"
+              style={{ backgroundColor: sliceColor(i) }}
+            />
+            <span className="truncate">{x.name}</span>
+            <span className="ml-auto flex shrink-0 items-baseline gap-3 tabular-nums">
+              {x.cost !== undefined && <span>{formatMoney(x.value)}</span>}
+              {pnl !== null && (
+                <span className={`text-xs ${pnl >= 0 ? "text-green-600" : "text-red-600"}`}>
+                  {pnl >= 0 ? "+" : ""}
+                  {formatMoney(pnl)}
+                </span>
+              )}
+              <span className="w-12 text-right text-black/60 dark:text-white/60">
+                {((x.value / total) * 100).toFixed(1)}%
+              </span>
+            </span>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -135,7 +155,7 @@ export default function DashboardCharts({
    * to keep the headline total and the chart in agreement.
    */
   live: { date: string; value: number; cost: number };
-  categoryBreakdown: { category: string; value: number }[];
+  categoryBreakdown: { category: string; value: number; cost: number }[];
   fundBreakdown: { name: string; value: number }[];
 }) {
   const [view, setView] = useState<View>("total");
@@ -564,6 +584,7 @@ export default function DashboardCharts({
             items={(allocationMode === "category" ? categoryBreakdown : fundBreakdown).map((e) => ({
               name: "category" in e ? e.category : e.name,
               value: e.value,
+              cost: "cost" in e ? e.cost : undefined,
             }))}
           />
         </>

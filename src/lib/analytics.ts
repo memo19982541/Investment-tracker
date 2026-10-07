@@ -144,6 +144,55 @@ export function snapshotStatsAtDate(
   return best ? { totalValue: best.totalValue, totalCost: best.totalCost } : null;
 }
 
+export interface DailyChange {
+  /** The earlier day compared against (latest logged day before today). */
+  prevDate: string;
+  change: number;
+  pct: number;
+}
+
+/**
+ * How much the portfolio moved since the last logged day before `today`,
+ * excluding deposits/withdrawals — same idea as the Analysis page: realized
+ * gains from sells since then plus the change in (value − cost). Reads the
+ * fund log rather than snapshots because snapshots get pruned down to
+ * Wed/Sat, so yesterday's usually doesn't exist; the fund log is kept daily.
+ */
+export function computeDailyChange(
+  fundLog: FundLogEntry[],
+  transactions: Transaction[],
+  assets: Asset[],
+  currency: Currency,
+  currentPnl: number,
+  today: string
+): DailyChange | null {
+  const visibleIds = new Set(
+    assets.filter((a) => a.currency === currency && !a.hidden).map((a) => a.id)
+  );
+
+  let prevDate = "";
+  for (const f of fundLog) {
+    if (visibleIds.has(f.assetId) && f.date < today && f.date > prevDate) prevDate = f.date;
+  }
+  if (!prevDate) return null;
+
+  let prevValue = 0;
+  let prevPnl = 0;
+  for (const f of fundLog) {
+    if (f.date === prevDate && visibleIds.has(f.assetId)) {
+      prevValue += f.value;
+      prevPnl += f.pnl;
+    }
+  }
+
+  const realizedSince = computeRealizedPnlEvents(transactions, assets, currency)
+    .filter((e) => e.date > prevDate && e.date <= today && visibleIds.has(e.assetId))
+    .reduce((sum, e) => sum + e.pnl, 0);
+
+  const change = currentPnl - prevPnl + realizedSince;
+  return { prevDate, change, pct: prevValue > 0 ? (change / prevValue) * 100 : 0 };
+}
+
 /**
  * Trade-vs-no-trade comparison, matching the baseline formula from the
  * user's "บันทึกข้อมูล" Apps Script: freeze each held fund's units at a
