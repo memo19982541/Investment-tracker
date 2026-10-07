@@ -16,6 +16,7 @@ import {
   sortAssetsForDisplay,
 } from "@/lib/data";
 import { computeDailyChange } from "@/lib/analytics";
+import { dailyMessage, dailyTier, MOOD_BY_TIER } from "@/lib/cheer";
 import { formatDate, formatMoney, todayInThailand } from "@/lib/format";
 import DailyUpdateButton from "@/components/DailyUpdateButton";
 import DashboardCharts from "@/components/DashboardCharts";
@@ -70,6 +71,10 @@ function CurrencySection({
     todayInThailand()
   );
 
+  const tier = dailyTier(dailyChange?.pct);
+  const mood = MOOD_BY_TIER[tier];
+  const cheerLine = currency === "THB" ? dailyMessage(tier, todayInThailand()) : null;
+
   const byCategory = new Map<string, { value: number; cost: number }>();
   for (const h of holdings) {
     const cur = byCategory.get(h.asset.category) ?? { value: 0, cost: 0 };
@@ -104,13 +109,16 @@ function CurrencySection({
             </span>
           </p>
         )}
+        {cheerLine && (
+          <p className="mt-0.5 text-xs font-medium text-pink-600 dark:text-pink-400">{cheerLine}</p>
+        )}
         {currency === "THB" && (
           <p className="mt-1 text-sm text-black/60 dark:text-white/60">
             เงินสดคงเหลือ: {formatMoney(cashTotal)}
           </p>
         )}
       </div>
-      {currency === "THB" && <CheerBust />}
+      {currency === "THB" && <CheerBust mood={mood} />}
       </div>
       {currency === "THB" && (
         <GoalProgressBar
