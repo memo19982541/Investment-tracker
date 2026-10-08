@@ -144,53 +144,55 @@ export function snapshotStatsAtDate(
   return best ? { totalValue: best.totalValue, totalCost: best.totalCost } : null;
 }
 
-export interface DailyChange {
-  /** The earlier day compared against (latest logged day before today). */
+/** Wednesday or Saturday for an ISO "YYYY-MM-DD" date (no time component, so UTC is safe). */
+export function isKeeperDayOfWeek(date: string): boolean {
+  const day = new Date(`${date}T00:00:00Z`).getUTCDay();
+  return day === 3 || day === 6;
+}
+
+export interface SnapshotChange {
+  /** The earlier snapshot compared against. */
   prevDate: string;
   change: number;
   pct: number;
 }
 
 /**
- * How much the portfolio moved since the last logged day before `today`,
- * excluding deposits/withdrawals — same idea as the Analysis page: realized
- * gains from sells since then plus the change in (value − cost). Reads the
- * fund log rather than snapshots because snapshots get pruned down to
- * Wed/Sat, so yesterday's usually doesn't exist; the fund log is kept daily.
+ * How much the portfolio moved since the last retained snapshot before
+ * `today`, excluding deposits/withdrawals — same idea as the Analysis page:
+ * realized gains from sells since then plus the change in (value − cost).
+ *
+ * Only snapshots that survive pruning (Wed/Sat or manual) count as the
+ * baseline, so the comparison point doesn't jump around depending on whether
+ * the pruning has run yet today. Realized events cover every asset of the
+ * currency, hidden or not, because the snapshot's P&L included assets that
+ * have since been sold out and hidden.
  */
-export function computeDailyChange(
-  fundLog: FundLogEntry[],
+export function computeChangeSincePrevious(
+  snapshots: Snapshot[],
   transactions: Transaction[],
   assets: Asset[],
   currency: Currency,
-  currentPnl: number,
+  currentValue: number,
+  currentCost: number,
   today: string
-): DailyChange | null {
-  const visibleIds = new Set(
-    assets.filter((a) => a.currency === currency && !a.hidden).map((a) => a.id)
-  );
-
-  let prevDate = "";
-  for (const f of fundLog) {
-    if (visibleIds.has(f.assetId) && f.date < today && f.date > prevDate) prevDate = f.date;
+): SnapshotChange | null {
+  let prev: Snapshot | null = null;
+  for (const s of snapshots) {
+    if (s.currency !== currency || s.date >= today) continue;
+    if (!s.manual && !isKeeperDayOfWeek(s.date)) continue;
+    if (!prev || s.date > prev.date) prev = s;
   }
-  if (!prevDate) return null;
+  if (!prev) return null;
 
-  let prevValue = 0;
-  let prevPnl = 0;
-  for (const f of fundLog) {
-    if (f.date === prevDate && visibleIds.has(f.assetId)) {
-      prevValue += f.value;
-      prevPnl += f.pnl;
-    }
-  }
-
+  const prevDate = prev.date;
+  const prevPnl = prev.totalValue - prev.totalCost;
   const realizedSince = computeRealizedPnlEvents(transactions, assets, currency)
-    .filter((e) => e.date > prevDate && e.date <= today && visibleIds.has(e.assetId))
+    .filter((e) => e.date > prevDate && e.date <= today)
     .reduce((sum, e) => sum + e.pnl, 0);
 
-  const change = currentPnl - prevPnl + realizedSince;
-  return { prevDate, change, pct: prevValue > 0 ? (change / prevValue) * 100 : 0 };
+  const change = currentValue - currentCost - prevPnl + realizedSince;
+  return { prevDate, change, pct: prev.totalValue > 0 ? (change / prev.totalValue) * 100 : 0 };
 }
 
 /**

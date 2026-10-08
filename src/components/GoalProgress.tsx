@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import Image from "next/image";
 import { formatMoney } from "@/lib/format";
-import type { Mood } from "@/lib/cheer";
+import { imageTier, type DailyTier } from "@/lib/cheer";
 
 /** Goals the bar steps through automatically: it targets the first one not yet reached. */
 const GOALS_THB = [1_000_000, 2_000_000, 5_000_000, 10_000_000];
@@ -79,13 +79,14 @@ export function GoalProgressBar({
   );
 }
 
-// Each image is a transparent cut-out already shrunk to web size. The rocket
-// pose is a whole-body shape, so it's shown a bit taller than the bust shots.
-const MOOD_IMAGES: Record<Mood, { src: string; width: number; height: number; className: string }> = {
-  happy: { src: "/investor-happy.png", width: 425, height: 360, className: "h-[120px] sm:h-44" },
-  rocket: { src: "/investor-rocket.png", width: 278, height: 360, className: "h-40 sm:h-56" },
-  sad: { src: "/investor-sad.png", width: 329, height: 360, className: "h-[120px] sm:h-44" },
-  crying: { src: "/investor-crying.png", width: 396, height: 360, className: "h-[120px] sm:h-44" },
+// Each image is a transparent bust cut-out already shrunk to web size.
+const IMAGE_SIZE: Record<Exclude<DailyTier, "none">, { width: number; height: number }> = {
+  surge: { width: 388, height: 360 },
+  up: { width: 425, height: 360 },
+  flat: { width: 425, height: 360 },
+  down: { width: 425, height: 360 },
+  drop: { width: 425, height: 360 },
+  plunge: { width: 396, height: 360 },
 };
 
 /**
@@ -93,19 +94,20 @@ const MOOD_IMAGES: Record<Mood, { src: string; width: number; height: number; cl
  * The bust shots are cut off at the waist so she looks like she's standing
  * behind the progress bar directly beneath her.
  */
-export function CheerBust({ mood }: { mood: Mood }) {
-  const img = MOOD_IMAGES[mood];
+export function CheerBust({ tier }: { tier: DailyTier }) {
+  const name = imageTier(tier);
+  const size = IMAGE_SIZE[name];
   return (
     <Image
-      src={img.src}
+      src={`/investor-${name}.png`}
       alt=""
-      width={img.width}
-      height={img.height}
+      width={size.width}
+      height={size.height}
       // Already web-sized; skipping the optimizer also keeps the file behind
       // the login (the optimizer fetches it server-side without the session
       // cookie, which the auth proxy would redirect to /login).
       unoptimized
-      className={`pointer-events-none w-auto shrink-0 select-none ${img.className}`}
+      className="pointer-events-none h-[120px] w-auto shrink-0 select-none sm:h-44"
     />
   );
 }

@@ -1,51 +1,68 @@
 /**
- * Cheering-character logic: which mood/image and which line of encouragement
- * to show for the baht portfolio's change since the previous day (a
- * deposit-neutral percentage, see computeDailyChange).
+ * Cheering-character logic: which image and which line of encouragement to
+ * show for the baht portfolio's change since the previous saved snapshot (a
+ * deposit-neutral percentage, see computeChangeSincePrevious).
  */
 
-export type DailyTier = "none" | "surge" | "up" | "down" | "plunge";
-export type Mood = "happy" | "rocket" | "sad" | "crying";
+export type DailyTier = "none" | "surge" | "up" | "flat" | "down" | "drop" | "plunge";
 
-/** surge > +3%, up 0..+3%, down below 0 down to -3%, plunge < -3%. */
+/**
+ * surge  > +3%
+ * up     +1 .. +3%
+ * flat    0 .. +1%   (0 included)
+ * down   -3 .. 0%
+ * drop   -5 .. -3%
+ * plunge < -5%
+ */
 export function dailyTier(pct: number | null | undefined): DailyTier {
   if (pct == null || !Number.isFinite(pct)) return "none";
-  if (pct > 3) return "surge";
-  if (pct >= 0) return "up";
-  if (pct >= -3) return "down";
+  // Round to the 2 decimals shown on screen, so a "-0.00%" reads as flat
+  // rather than as a loss (Math.round keeps -0, and -0 >= 0 is true).
+  const p = Math.round(pct * 100) / 100;
+  if (p > 3) return "surge";
+  if (p >= 1) return "up";
+  if (p >= 0) return "flat";
+  if (p >= -3) return "down";
+  if (p >= -5) return "drop";
   return "plunge";
 }
 
-export const MOOD_BY_TIER: Record<DailyTier, Mood> = {
-  none: "happy",
-  surge: "rocket",
-  up: "happy",
-  down: "sad",
-  plunge: "crying",
-};
+/** Image shown for each tier (public/investor-<tier>.png); no data falls back to the calm pose. */
+export function imageTier(tier: DailyTier): Exclude<DailyTier, "none"> {
+  return tier === "none" ? "flat" : tier;
+}
 
 // Patient-DCA tone: when it's red, stay calm, sit on your hands, keep buying on plan.
 const MESSAGES: Record<Exclude<DailyTier, "none">, string[]> = {
   surge: [
-    "วันนี้พอร์ตพุ่งแรง! ดีใจด้วยนะ แต่อย่าไล่ซื้อตามอารมณ์ DCA ตามแผนต่อไปก็พอ",
-    "เขียวสวยเลย! จำไว้ว่าวินัยสำคัญกว่าจังหวะ ทำตามแผนที่วางไว้ต่อไป",
-    "จรวดขึ้นแล้ว! ใจเย็นๆ ไม่ต้องรีบขาย ไม่ต้องรีบซื้อเพิ่ม ปล่อยให้เวลาทำงาน",
+    "พอร์ตพุ่งแรงเลย! ดีใจด้วยนะ แต่อย่าไล่ซื้อตามอารมณ์ DCA ตามแผนต่อไปก็พอ",
+    "เขียวสวยเลย! วินัยสำคัญกว่าจังหวะ ทำตามแผนที่วางไว้ต่อไป",
+    "จรวดขึ้นแล้ว! ไม่ต้องรีบขาย ไม่ต้องรีบซื้อเพิ่ม ปล่อยให้เวลาทำงาน",
   ],
   up: [
-    "เขียวทีละนิด สะสมไปเรื่อยๆ ก็ถึงเป้าได้ สู้ๆ",
-    "วันนี้ไปต่อได้ดี DCA สม่ำเสมอคือกุญแจสำคัญ",
-    "ค่อยๆ โตก็ไม่เป็นไร ความสม่ำเสมอชนะทุกอย่าง",
-    "วันนี้นิ่งๆ ก็ไม่เป็นไร นั่งทับมือรอจังหวะไป ไม่ต้องทำอะไรเยอะ",
+    "เขียวสวย ไปต่อได้ดี DCA สม่ำเสมอคือกุญแจสำคัญ",
+    "สะสมไปเรื่อยๆ ก็ถึงเป้าได้ สู้ๆ",
+    "ค่อยๆ โตแบบนี้แหละดี ความสม่ำเสมอชนะทุกอย่าง",
+  ],
+  flat: [
+    "ขยับขึ้นนิดๆ ก็ยังเป็นเขียว สะสมทีละก้าวไปเรื่อยๆ",
+    "ค่อยๆ เก็บไปทีละนิด ไม่ต้องรีบ ถึงเป้าแน่นอน",
+    "สงบๆ แบบนี้ก็ดี DCA ตามแผนต่อไปเลย",
   ],
   down: [
     "ลงนิดหน่อยเป็นเรื่องปกติ ใจเย็นๆ DCA ต่อไป ราคาถูกลงคือได้หน่วยเพิ่ม",
     "แดงเล็กน้อยไม่ต้องกลัว นั่งทับมือไว้ อย่าเพิ่งขายตามอารมณ์",
-    "วันนี้ลงหน่อย แต่แผนระยะยาวไม่เปลี่ยน อดทนไว้ แล้ว DCA ต่อ",
+    "วันนี้นิ่งๆ หรือลงนิดหน่อยก็ไม่เป็นไร นั่งทับมือรอจังหวะไป ไม่ต้องทำอะไรเยอะ",
+  ],
+  drop: [
+    "ลงแรงหน่อย หายใจลึกๆ อดทนไว้ ไม่ขายตอนตกใจ",
+    "ตลาดแรงๆ มีให้เห็นเป็นปกติ นั่งทับมือ ถือไว้ก่อน แล้ว DCA ต่อตามแผน",
+    "ราคาที่ลงคือโอกาสสะสมหน่วยเพิ่มสำหรับคนที่ DCA",
   ],
   plunge: [
-    "วันนี้หนักหน่อย ไม่เป็นไรนะ หายใจลึกๆ อดทนไว้ ไม่ขายตอนตกใจ DCA ต่อเนื่อง",
-    "ตลาดแรงๆ มีให้เห็นเป็นปกติ นั่งทับมือรอจังหวะ ถือไว้ก่อน แล้วสะสมต่อตามแผน",
-    "ใจเย็นๆ ก่อนกดขาย ราคาที่ลงคือโอกาสสะสมหน่วยเพิ่มสำหรับคนที่ DCA",
+    "หนักจริงๆ ช่วงนี้ ไม่เป็นไรนะ ปิดแอปแล้วพักสักหน่อย ไม่ต้องตัดสินใจอะไรตอนนี้",
+    "ตลาดตกแรงก็เกิดขึ้นได้ คนที่ถือยาวผ่านมาหมดแล้ว ถือไว้ ไม่ขายตอนตกใจ DCA ต่อเนื่อง",
+    "วันแดงหนักๆ คือบททดสอบวินัย ถือไว้ นั่งทับมือ แล้วสะสมต่อตามแผน",
   ],
 };
 

@@ -62,11 +62,10 @@ export async function runFetchLatestPrices(
 
 /**
  * Full daily update: fetch latest prices, record today's snapshot and
- * fundLog entries unconditionally (fundLog needs a daily row regardless of
- * whether anything changed, for accurate price-history lookups), then prune
- * past non-keeper-day snapshots (anything not Wednesday/Saturday and not
- * manually saved) so the chart settles into roughly two points a week
- * instead of piling up duplicates from Thai funds' multi-day NAV lag.
+ * fundLog entries, then prune past non-keeper-day snapshots and their
+ * fundLog rows (anything not Wednesday/Saturday and not manually saved) so
+ * history settles into roughly two points a week instead of piling up
+ * duplicates from Thai funds' multi-day NAV lag.
  */
 export async function runDailyPriceUpdate(accessToken: string, spreadsheetId: string) {
   const fetchResult = await runFetchLatestPrices(accessToken, spreadsheetId);

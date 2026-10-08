@@ -8,6 +8,7 @@ import {
   upsertRowByKey,
   upsertRowsByKeyBulk,
 } from "./sheets";
+import { isKeeperDayOfWeek } from "./analytics";
 import { todayInThailand } from "./format";
 import type {
   Asset,
@@ -420,38 +421,46 @@ export async function recordSnapshotAndFundLog(
   );
 }
 
-/** Sunday=0 ... Saturday=6, for an ISO "YYYY-MM-DD" date string, in UTC (snapshot dates have no time component). */
-function isKeeperDayOfWeek(date: string): boolean {
-  const day = new Date(`${date}T00:00:00Z`).getUTCDay();
-  return day === 3 || day === 6; // Wednesday or Saturday
-}
-
 /**
  * Deletes past (before today) snapshot rows that are neither a keeper
  * day-of-week (Wednesday/Saturday) nor flagged `manual: true`. Run after
- * the daily cron writes today's snapshot, so history settles into roughly
+ * the daily update writes today's snapshot, so history settles into roughly
  * two points a week instead of piling up a duplicate for every day a Thai
  * fund's NAV hasn't actually been republished — while never touching a
  * manually-saved checkpoint or anything from today itself.
  *
- * Only prunes `snapshots` (the chart/total-value history), not `fundLog`
- * (the per-asset price/units history) — fundLog stays daily on purpose, so
- * price-history lookups (no-trade baseline, backfill) keep full precision.
+ * The per-fund `fundLog` rows of those same dates go with them: the same
+ * daily update wrote them, and nothing reads a fundLog day that has no
+ * snapshot. Matching on the pruned snapshot dates (rather than on
+ * day-of-week alone) leaves backfilled/imported fundLog history untouched,
+ * since those dates carry a manual snapshot or none at all.
  */
 export async function pruneNonKeeperSnapshots(accessToken: string, spreadsheetId: string) {
   const today = todayInThailand();
   const snapshots = await getSnapshots(accessToken, spreadsheetId);
-  const toDelete = new Set(
-    snapshots
-      .filter((s) => s.date < today && !s.manual && !isKeeperDayOfWeek(s.date))
-      .map((s) => `${s.date}|${s.currency}`)
-  );
-  if (toDelete.size === 0) return { pruned: 0 };
 
-  await deleteRowsWhere(accessToken, spreadsheetId, "snapshots", (row) =>
-    toDelete.has(`${row[0]}|${row[1]}`)
-  );
-  return { pruned: toDelete.size };
+  const prunableRows = new Set<string>();
+  const prunableDates = new Set<string>();
+  const protectedDates = new Set<string>();
+  for (const s of snapshots) {
+    if (s.date < today && !s.manual && !isKeeperDayOfWeek(s.date)) {
+      prunableRows.add(`${s.date}|${s.currency}`);
+      prunableDates.add(s.date);
+    } else {
+      protectedDates.add(s.date);
+    }
+  }
+  // A date is only safe to drop from fundLog if none of its snapshots is kept.
+  for (const d of protectedDates) prunableDates.delete(d);
+  if (prunableRows.size === 0) return { pruned: 0 };
+
+  await Promise.all([
+    deleteRowsWhere(accessToken, spreadsheetId, "snapshots", (row) =>
+      prunableRows.has(`${row[0]}|${row[1]}`)
+    ),
+    deleteRowsWhere(accessToken, spreadsheetId, "fundLog", (row) => prunableDates.has(row[0])),
+  ]);
+  return { pruned: prunableRows.size };
 }
 
 /**

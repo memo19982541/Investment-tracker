@@ -44,6 +44,16 @@ export function formatDate(iso: string) {
   });
 }
 
+const THAI_WEEKDAYS = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
+
+/** Date label with its Thai weekday in front, for a plain YYYY-MM-DD date. */
+export function formatDateWithWeekday(iso: string) {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return formatDate(iso);
+  const day = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))).getUTCDay();
+  return `${THAI_WEEKDAYS[day]} ${formatDate(iso)}`;
+}
+
 /**
  * Picks up to `maxTicks` evenly-spaced values from an already-sorted array
  * (always including the first and last), for passing as a chart axis's

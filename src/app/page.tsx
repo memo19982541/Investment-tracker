@@ -15,9 +15,9 @@ import {
   getTransactions,
   sortAssetsForDisplay,
 } from "@/lib/data";
-import { computeDailyChange } from "@/lib/analytics";
-import { dailyMessage, dailyTier, MOOD_BY_TIER } from "@/lib/cheer";
-import { formatDate, formatMoney, todayInThailand } from "@/lib/format";
+import { computeChangeSincePrevious } from "@/lib/analytics";
+import { dailyMessage, dailyTier } from "@/lib/cheer";
+import { formatDateWithWeekday, formatMoney, todayInThailand } from "@/lib/format";
 import DailyUpdateButton from "@/components/DailyUpdateButton";
 import DashboardCharts from "@/components/DashboardCharts";
 import { CheerBust, GoalProgressBar } from "@/components/GoalProgress";
@@ -62,17 +62,17 @@ function CurrencySection({
   const cashTotal = holdings
     .filter((h) => h.asset.type === "cash")
     .reduce((s, h) => s + h.currentValue, 0);
-  const dailyChange = computeDailyChange(
-    fundLog,
+  const dailyChange = computeChangeSincePrevious(
+    snapshots,
     transactions,
     assets,
     currency,
-    totalPnl,
+    totalValue,
+    totalCost,
     todayInThailand()
   );
 
   const tier = dailyTier(dailyChange?.pct);
-  const mood = MOOD_BY_TIER[tier];
   const cheerLine = currency === "THB" ? dailyMessage(tier, todayInThailand()) : null;
 
   const byCategory = new Map<string, { value: number; cost: number }>();
@@ -101,7 +101,7 @@ function CurrencySection({
         </p>
         {dailyChange && (
           <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-            เปลี่ยนจากวันก่อน ({formatDate(dailyChange.prevDate)}):{" "}
+            เปลี่ยนจากบันทึกก่อนหน้า ({formatDateWithWeekday(dailyChange.prevDate)}):{" "}
             <span className={dailyChange.change >= 0 ? "text-green-600" : "text-red-600"}>
               {dailyChange.change >= 0 ? "+" : ""}
               {formatMoney(dailyChange.change)} ({dailyChange.change >= 0 ? "+" : ""}
@@ -118,7 +118,7 @@ function CurrencySection({
           </p>
         )}
       </div>
-      {currency === "THB" && <CheerBust mood={mood} />}
+      {currency === "THB" && <CheerBust tier={tier} />}
       </div>
       {currency === "THB" && (
         <GoalProgressBar
