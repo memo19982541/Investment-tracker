@@ -274,7 +274,8 @@ export async function getSnapshots(
       totalCost: Number(r.totalCost),
       byCategoryJson: r.byCategoryJson,
       createdAt: r.createdAt,
-      manual: r.manual === "true",
+      // Hand-edited cells can come back as "TRUE" (Sheets turns typed text into a boolean).
+      manual: String(r.manual).toLowerCase() === "true",
     })
   );
 }
@@ -421,6 +422,12 @@ export async function recordSnapshotAndFundLog(
   );
 }
 
+/** Thailand calendar date (YYYY-MM-DD) of an ISO timestamp, or "" if unparseable. */
+function thaiDateOf(iso: string | undefined): string {
+  const t = iso ? new Date(iso).getTime() : NaN;
+  return Number.isNaN(t) ? "" : new Date(t + 7 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
 /**
  * Deletes past (before today) snapshot rows that are neither a keeper
  * day-of-week (Wednesday/Saturday) nor flagged `manual: true`. Run after
@@ -429,11 +436,8 @@ export async function recordSnapshotAndFundLog(
  * fund's NAV hasn't actually been republished — while never touching a
  * manually-saved checkpoint or anything from today itself.
  *
- * The per-fund `fundLog` rows of those same dates go with them: the same
- * daily update wrote them, and nothing reads a fundLog day that has no
- * snapshot. Matching on the pruned snapshot dates (rather than on
- * day-of-week alone) leaves backfilled/imported fundLog history untouched,
- * since those dates carry a manual snapshot or none at all.
+ * The per-fund `fundLog` rows the daily update wrote for those same dates go
+ * with them (nothing reads a fundLog day that has no snapshot).
  */
 export async function pruneNonKeeperSnapshots(accessToken: string, spreadsheetId: string) {
   const today = todayInThailand();
@@ -458,7 +462,16 @@ export async function pruneNonKeeperSnapshots(accessToken: string, spreadsheetId
     deleteRowsWhere(accessToken, spreadsheetId, "snapshots", (row) =>
       prunableRows.has(`${row[0]}|${row[1]}`)
     ),
-    deleteRowsWhere(accessToken, spreadsheetId, "fundLog", (row) => prunableDates.has(row[0])),
+    // Only rows written on their own date (createdAt = that day) — i.e. the
+    // daily update's. Rows added later for an older date (NAV backfill,
+    // imported or regenerated history) are kept even when that date's
+    // snapshot is pruned.
+    deleteRowsWhere(
+      accessToken,
+      spreadsheetId,
+      "fundLog",
+      (row) => prunableDates.has(row[0]) && thaiDateOf(row[8]) === row[0]
+    ),
   ]);
   return { pruned: prunableRows.size };
 }
@@ -789,6 +802,9 @@ export async function addHistoricalSnapshots(
         totalValue,
         totalCost,
         byCategoryJson: JSON.stringify(byCategory),
+        // Month-end points aren't Wed/Sat, so without this flag the next
+        // price update's pruning would delete them (and their fundLog rows).
+        manual: true,
       });
     }
   }

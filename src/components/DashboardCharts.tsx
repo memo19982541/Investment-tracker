@@ -74,15 +74,29 @@ const TIGHT_DOMAIN: [(min: number) => number, (max: number) => number] = [
   (max) => Math.ceil(max * 1.03),
 ];
 
-type ProfitSeriesMode = "both" | "month" | "allTime";
+type ProfitMode = "allTime" | "month";
 
-const PROFIT_SERIES_LABELS: Record<ProfitSeriesMode, string> = {
-  both: "เทียบทั้งสอง",
-  month: "ไม่เทรดรายเดือน",
-  allTime: "ไม่เทรดตั้งแต่ต้น",
+const PROFIT_MODE_LABELS: Record<ProfitMode, string> = {
+  allTime: "ตั้งแต่ต้น",
+  month: "รายเดือน",
 };
 
-const DASHBOARD_PERIODS: Period[] = ["1m", "3m", "6m", "all"];
+/** Plain "YYYY-MM-DD" as a Date at local midnight (no timezone shifting). */
+function localDate(iso: string) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function formatShortDay(iso: string) {
+  return localDate(iso).toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+}
+
+/** "YYYY-MM" as the Thai month name, e.g. "ตุลาคม". */
+function formatMonthName(ym: string) {
+  return localDate(`${ym}-01`).toLocaleDateString("th-TH", { month: "long" });
+}
+
+const DASHBOARD_PERIODS: Period[] = ["1m", "3m", "6m", "1y", "all"];
 
 function EmptyNote({ children }: { children: ReactNode }) {
   return (
@@ -212,12 +226,19 @@ export default function DashboardCharts({
   const [selectedAssetId, setSelectedAssetId] = useState<string>("");
   const [allocationMode, setAllocationMode] = useState<"category" | "fund">("category");
 
-  const [profitMode, setProfitMode] = useState<ProfitSeriesMode>("both");
-  const showProfitMonth = profitMode !== "allTime";
-  const showProfitAllTime = profitMode !== "month";
+  const [profitMode, setProfitMode] = useState<ProfitMode>("allTime");
+  const [profitMonthChoice, setProfitMonthChoice] = useState("");
 
   const [period, setPeriod] = useState<Period>("all");
   const cutoff = useMemo(() => cutoffDateFor(period), [period]);
+
+  // The total-value chart has its own range, defaulting to the last 6 months.
+  const [totalPeriod, setTotalPeriod] = useState<Period>("6m");
+  const totalCutoff = useMemo(() => cutoffDateFor(totalPeriod), [totalPeriod]);
+  const visibleTotalPoints = useMemo(
+    () => (totalCutoff ? totalPoints.filter((p) => p.date >= totalCutoff) : totalPoints),
+    [totalPoints, totalCutoff]
+  );
 
   const noTradeSeriesFull = useMemo(
     () => computeNoTradeSeries(fundLog, snapshots, transactions, assets, currency),
@@ -229,8 +250,8 @@ export default function DashboardCharts({
   );
 
   const totalTicks = useMemo(
-    () => pickEvenTicks(totalPoints.map((p) => p.date)),
-    [totalPoints]
+    () => pickEvenTicks(visibleTotalPoints.map((p) => p.date)),
+    [visibleTotalPoints]
   );
   const categoryTicks = useMemo(
     () => pickEvenTicks(categorySeries.points.map((p) => p.date)),
@@ -241,32 +262,61 @@ export default function DashboardCharts({
     [noTradeSeries]
   );
 
-  const profitSeries = useMemo(
+  // Months that have at least one snapshot, newest first (for the monthly view).
+  const profitMonths = useMemo(
     () =>
-      noTradeSeries.map((p) => ({
-        date: p.date,
-        profitVsNoTradeMonth: p.noTradeMonth == null ? null : p.actual - p.noTradeMonth,
-        profitVsNoTradeAllTime:
-          p.noTradeAllTime == null ? null : p.actual - p.noTradeAllTime,
-      })),
-    [noTradeSeries]
+      [...new Set(noTradeSeriesFull.map((p) => p.date.slice(0, 7)))].sort().reverse(),
+    [noTradeSeriesFull]
   );
+  const profitMonth = profitMonths.includes(profitMonthChoice)
+    ? profitMonthChoice
+    : (profitMonths[0] ?? "");
+  const profitYears = useMemo(
+    () => [...new Set(profitMonths.map((ym) => ym.slice(0, 4)))],
+    [profitMonths]
+  );
+
+  // "allTime": one continuous line against the very first snapshot.
+  // "month": only the chosen month, starting at 0 on the baseline day (the last
+  // snapshot before that month) so it's clear where each month's comparison begins.
+  const profitSeries = useMemo(() => {
+    if (profitMode === "allTime") {
+      return noTradeSeries.map((p) => ({
+        date: p.date,
+        profit: p.noTradeAllTime == null ? null : p.actual - p.noTradeAllTime,
+      }));
+    }
+    if (!profitMonth) return [];
+    const dates = noTradeSeriesFull.map((p) => p.date);
+    const baselineDate = [...dates].reverse().find((d) => d < `${profitMonth}-01`) ?? dates[0];
+    const rows: { date: string; profit: number | null }[] = noTradeSeriesFull
+      .filter((p) => p.date.startsWith(profitMonth))
+      .map((p) => ({
+        date: p.date,
+        profit: p.noTradeMonth == null ? null : p.actual - p.noTradeMonth,
+      }));
+    if (baselineDate && !rows.some((r) => r.date === baselineDate)) {
+      rows.unshift({ date: baselineDate, profit: 0 });
+    }
+    return rows;
+  }, [profitMode, noTradeSeries, noTradeSeriesFull, profitMonth]);
+  const profitBaselineDate =
+    profitMode === "allTime" ? noTradeSeriesFull[0]?.date : profitSeries[0]?.date;
+  const profitLatest = [...profitSeries].reverse().find((p) => p.profit != null);
   const profitTicks = useMemo(
-    () => pickEvenTicks(profitSeries.map((p) => p.date)),
-    [profitSeries]
+    () =>
+      profitMode === "month"
+        ? profitSeries.map((p) => p.date)
+        : pickEvenTicks(profitSeries.map((p) => p.date)),
+    [profitSeries, profitMode]
   );
   const profitDomain = useMemo(() => {
-    const values = profitSeries
-      .flatMap((p) => [
-        showProfitMonth ? p.profitVsNoTradeMonth : null,
-        showProfitAllTime ? p.profitVsNoTradeAllTime : null,
-      ])
-      .filter((v): v is number => v != null);
+    const values = profitSeries.map((p) => p.profit).filter((v): v is number => v != null);
     const min = Math.min(0, ...values);
     const max = Math.max(0, ...values);
     const pad = Math.max((max - min) * 0.1, 1);
     return { min: min - pad, max: max + pad };
-  }, [profitSeries, showProfitMonth, showProfitAllTime]);
+  }, [profitSeries]);
 
   return (
     <div className="space-y-4 rounded-lg border border-black/10 p-4 dark:border-white/10">
@@ -287,7 +337,7 @@ export default function DashboardCharts({
         ))}
       </div>
 
-      {(view === "notrade" || view === "profit") && (
+      {view === "notrade" && (
         <div className="flex flex-wrap gap-1.5">
           {DASHBOARD_PERIODS.map((p) => (
             <button
@@ -306,6 +356,25 @@ export default function DashboardCharts({
         </div>
       )}
 
+      {view === "total" && totalPoints.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {DASHBOARD_PERIODS.map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => setTotalPeriod(p)}
+              className={`rounded-full border px-2.5 py-1 text-xs ${
+                totalPeriod === p
+                  ? "border-black/20 font-medium dark:border-white/30"
+                  : "border-black/10 text-black/40 dark:border-white/10 dark:text-white/40"
+              }`}
+            >
+              {PERIOD_LABELS[p]}
+            </button>
+          ))}
+        </div>
+      )}
+
       {view === "total" &&
         (totalPoints.length === 0 ? (
           <EmptyNote>
@@ -314,7 +383,7 @@ export default function DashboardCharts({
         ) : (
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={totalPoints} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+              <LineChart data={visibleTotalPoints} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="currentColor" opacity={0.1} />
                 <XAxis
                   dataKey="date"
@@ -425,22 +494,79 @@ export default function DashboardCharts({
       )}
 
       {view === "profit" && (
-        <div className="flex flex-wrap gap-1.5">
-          {(Object.keys(PROFIT_SERIES_LABELS) as ProfitSeriesMode[]).map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setProfitMode(m)}
-              className={`rounded-full border px-2.5 py-1 text-xs ${
-                profitMode === m
-                  ? "border-black/20 font-medium dark:border-white/30"
-                  : "border-black/10 text-black/40 dark:border-white/10 dark:text-white/40"
-              }`}
-            >
-              {PROFIT_SERIES_LABELS[m]}
-            </button>
-          ))}
-        </div>
+        <>
+          <div className="flex flex-wrap gap-1.5">
+            {(Object.keys(PROFIT_MODE_LABELS) as ProfitMode[]).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setProfitMode(m)}
+                className={`rounded-full px-3 py-1 text-xs font-medium ${
+                  profitMode === m
+                    ? "bg-black/80 text-white dark:bg-white/80 dark:text-black"
+                    : "bg-black/5 text-black/60 hover:bg-black/10 dark:bg-white/10 dark:text-white/60 dark:hover:bg-white/20"
+                }`}
+              >
+                {PROFIT_MODE_LABELS[m]}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {profitMode === "allTime"
+              ? DASHBOARD_PERIODS.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPeriod(p)}
+                    className={`rounded-full border px-2.5 py-1 text-xs ${
+                      period === p
+                        ? "border-black/20 font-medium dark:border-white/30"
+                        : "border-black/10 text-black/40 dark:border-white/10 dark:text-white/40"
+                    }`}
+                  >
+                    {PERIOD_LABELS[p]}
+                  </button>
+                ))
+              : profitMonth && (
+                  <>
+                    <select
+                      value={profitMonth.slice(0, 4)}
+                      onChange={(e) => {
+                        const year = e.target.value;
+                        const monthNo = profitMonth.slice(5);
+                        const inYear = profitMonths.filter((ym) => ym.startsWith(year));
+                        // Keep the same month when the new year has it, else its latest month.
+                        setProfitMonthChoice(
+                          inYear.includes(`${year}-${monthNo}`) ? `${year}-${monthNo}` : inYear[0]
+                        );
+                      }}
+                      aria-label="ปี"
+                      className="rounded-md border border-black/15 px-2.5 py-1 text-xs dark:border-white/20 dark:bg-transparent"
+                    >
+                      {profitYears.map((y) => (
+                        <option key={y} value={y}>
+                          {Number(y) + 543}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={profitMonth}
+                      onChange={(e) => setProfitMonthChoice(e.target.value)}
+                      aria-label="เดือน"
+                      className="rounded-md border border-black/15 px-2.5 py-1 text-xs dark:border-white/20 dark:bg-transparent"
+                    >
+                      {profitMonths
+                        .filter((ym) => ym.startsWith(profitMonth.slice(0, 4)))
+                        .map((ym) => (
+                          <option key={ym} value={ym}>
+                            {formatMonthName(ym)}
+                          </option>
+                        ))}
+                    </select>
+                  </>
+                )}
+          </div>
+        </>
       )}
 
       {view === "notrade" &&
@@ -474,11 +600,19 @@ export default function DashboardCharts({
         (profitSeries.length === 0 ? (
           <EmptyNote>ยังไม่มีข้อมูลพอที่จะคำนวณกำไร</EmptyNote>
         ) : (
+          <>
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={profitSeries} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="currentColor" opacity={0.1} />
-                <XAxis dataKey="date" ticks={profitTicks} fontSize={12} stroke="currentColor" opacity={0.6} tickFormatter={formatDate} />
+                <XAxis
+                  dataKey="date"
+                  ticks={profitTicks}
+                  fontSize={12}
+                  stroke="currentColor"
+                  opacity={0.6}
+                  tickFormatter={profitMode === "month" ? formatShortDay : formatDate}
+                />
                 <YAxis
                   domain={[profitDomain.min, profitDomain.max]}
                   allowDataOverflow
@@ -499,16 +633,32 @@ export default function DashboardCharts({
                       : value
                   }
                 />
-                <Legend />
-                {showProfitMonth && (
-                  <Line type="monotone" dataKey="profitVsNoTradeMonth" name="เทียบพอร์ตถ้าไม่เทรด (รายเดือน)" stroke="#d97706" strokeWidth={2} dot={false} connectNulls />
-                )}
-                {showProfitAllTime && (
-                  <Line type="monotone" dataKey="profitVsNoTradeAllTime" name="เทียบพอร์ตถ้าไม่เทรด (ตั้งแต่ต้น)" stroke="#7c3aed" strokeWidth={2} dot={false} connectNulls />
-                )}
+                <Line
+                  type="monotone"
+                  dataKey="profit"
+                  name="กำไร/ขาดทุนเทียบถ้าไม่เทรด"
+                  stroke={profitMode === "month" ? "#d97706" : "#7c3aed"}
+                  strokeWidth={2}
+                  dot={profitMode === "month"}
+                  connectNulls
+                />
               </LineChart>
             </ResponsiveContainer>
           </div>
+          <p className="text-xs text-black/60 dark:text-white/60">
+            เทียบกับพอร์ตที่ถือหน่วยเดิม ณ {profitBaselineDate ? formatDate(profitBaselineDate) : "-"}{" "}
+            ไว้เฉยๆ (เงินที่เติม/ถอนหลังจากนั้นนับตามจริง)
+            {profitLatest?.profit != null && (
+              <>
+                {" "}· ล่าสุด ({formatDate(profitLatest.date)}):{" "}
+                <span className={profitLatest.profit >= 0 ? "text-green-600" : "text-red-600"}>
+                  {profitLatest.profit >= 0 ? "+" : ""}
+                  {formatMoney(profitLatest.profit)}
+                </span>
+              </>
+            )}
+          </p>
+          </>
         ))}
 
       {view === "profitVsCost" &&
