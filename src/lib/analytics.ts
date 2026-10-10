@@ -150,6 +150,66 @@ export function isKeeperDayOfWeek(date: string): boolean {
   return day === 3 || day === 6;
 }
 
+function daysBetween(from: string, to: string): number {
+  const [fy, fm, fd] = from.split("-").map(Number);
+  const [ty, tm, td] = to.split("-").map(Number);
+  return (Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86_400_000;
+}
+
+/**
+ * Capital base for a period's return % that doesn't reward deposits: the
+ * value at the start plus every net deposit/withdrawal weighted by how much
+ * of the period that money was in the portfolio (the "modified Dietz"
+ * method). Dividing the period's P&L by this, instead of by the start value
+ * alone, stops mid-period deposits from inflating the %.
+ *
+ * Money flows are read off consecutive snapshots: the cost change between
+ * two snapshots minus the gains realized by selling in between (selling
+ * shifts cost by exactly the realized gain, see the Analysis bars). Each
+ * flow is assumed to land mid-way between its two snapshots. Returns null if
+ * fewer than two snapshots fall in the period.
+ */
+export function computePeriodCapitalBase(
+  snapshots: Snapshot[],
+  transactions: Transaction[],
+  assets: Asset[],
+  currency: Currency,
+  periodStart: string,
+  today: string
+): { base: number; netFlows: number } | null {
+  const sorted = snapshots
+    .filter((s) => s.currency === currency)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  let startIdx = -1;
+  let endIdx = -1;
+  sorted.forEach((s, i) => {
+    if (s.date <= periodStart) startIdx = i;
+    if (s.date <= today) endIdx = i;
+  });
+  if (startIdx < 0 || endIdx <= startIdx) return null;
+
+  const series = sorted.slice(startIdx, endIdx + 1);
+  const startDate = series[0].date;
+  const total = daysBetween(startDate, series[series.length - 1].date);
+  if (total <= 0) return null;
+
+  const realized = computeRealizedPnlEvents(transactions, assets, currency);
+  let base = series[0].totalValue;
+  let netFlows = 0;
+  for (let i = 1; i < series.length; i++) {
+    const prev = series[i - 1];
+    const cur = series[i];
+    const realizedBetween = realized
+      .filter((e) => e.date > prev.date && e.date <= cur.date)
+      .reduce((sum, e) => sum + e.pnl, 0);
+    const flow = cur.totalCost - prev.totalCost - realizedBetween;
+    const mid = (daysBetween(startDate, prev.date) + daysBetween(startDate, cur.date)) / 2;
+    base += flow * ((total - mid) / total);
+    netFlows += flow;
+  }
+  return { base, netFlows };
+}
+
 export interface SnapshotChange {
   /** The earlier snapshot compared against. */
   prevDate: string;

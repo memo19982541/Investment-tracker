@@ -1,7 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { computeRealizedPnlEvents, snapshotStatsAtDate } from "@/lib/analytics";
+import {
+  computePeriodCapitalBase,
+  computeRealizedPnlEvents,
+  snapshotStatsAtDate,
+} from "@/lib/analytics";
 import { formatDate, formatMoney, todayInThailand } from "@/lib/format";
 import { cutoffDateFor, PERIOD_LABELS, type Period } from "@/lib/period";
 import type { Asset, Currency, Holding, Snapshot, Transaction } from "@/lib/types";
@@ -136,37 +140,39 @@ export default function AnalysisSection({
   const unrealizedChange = pnlNow != null && pnlStart != null ? pnlNow - pnlStart : null;
   const totalPeriodPnl =
     unrealizedChange != null ? realizedTotal + unrealizedChange : null;
-  // % against the portfolio's value at the start of the period — the
-  // capital base that produced this return. Deposit-neutral like the P&L
-  // figure itself, though a large deposit mid-period will understate the
-  // % somewhat since the base grew partway through.
+  // % against the start value plus time-weighted deposits, so money added
+  // mid-period doesn't inflate the return (the P&L itself already excludes it).
+  // Falls back to the plain start value when there aren't two snapshots to
+  // read the flows from.
+  const capital = periodStart
+    ? computePeriodCapitalBase(snapshots, transactions, assets, currency, periodStart, today)
+    : null;
+  const pctBase = capital?.base ?? statsStart?.totalValue ?? 0;
   const totalPeriodPnlPct =
-    totalPeriodPnl != null && statsStart && statsStart.totalValue > 0
-      ? (totalPeriodPnl / statsStart.totalValue) * 100
-      : undefined;
+    totalPeriodPnl != null && pctBase > 0 ? (totalPeriodPnl / pctBase) * 100 : undefined;
 
-  // Cost side: total cost basis (holdings + cash) split into the capital
-  // behind the open positions, gains already banked by selling in this
-  // period, and idle cash. Value side: the same total value, split into
-  // cost (plus unrealized gain carried in from before the period), the
-  // change in unrealized gain during the period, and cash.
+  // Where the portfolio's cost and value come from over the period. Selling
+  // moves cost between an asset and cash by exactly the realized gain, so the
+  // net money added (deposits minus withdrawals) is what's left of the cost
+  // change after taking realized gains out. Both bars then add up exactly:
+  //   cost  now = cost  at start + net deposits + realized
+  //   value now = value at start + net deposits + realized + unrealized change
   const symbol = CURRENCY_SYMBOL[currency];
   const cashValue = holdings
     .filter((h) => h.asset.type === "cash")
     .reduce((s, h) => s + h.currentValue, 0);
-  const investHoldings = holdings.filter((h) => h.asset.type !== "cash");
-  const investCost = investHoldings.reduce((s, h) => s + h.cost, 0);
-  const investValue = investHoldings.reduce((s, h) => s + h.currentValue, 0);
-  const unrealizedPeriod = pnlStart != null ? investValue - investCost - pnlStart : 0;
+  const netDeposits =
+    statsNow && statsStart ? statsNow.totalCost - statsStart.totalCost - realizedTotal : 0;
   const costSegments: BarSegment[] = [
-    { label: "ต้นทุน", value: investCost - realizedTotal, color: "#5b8def" },
+    { label: "ต้นทุนต้นช่วง", value: statsStart?.totalCost ?? 0, color: "#5b8def" },
+    { label: "เงินเติมสุทธิ", value: netDeposits, color: "#f2b45a" },
     { label: "Realized", value: realizedTotal, color: "#34c790" },
-    { label: "เงินสด", value: cashValue, color: "#9b87dd" },
   ];
   const valueSegments: BarSegment[] = [
-    { label: "ต้นทุน", value: investValue - unrealizedPeriod, color: "#d4a84f" },
-    { label: "Unrealized", value: unrealizedPeriod, color: "#ee6a6a" },
-    { label: "เงินสด", value: cashValue, color: "#9b87dd" },
+    { label: "มูลค่าต้นช่วง", value: statsStart?.totalValue ?? 0, color: "#5b8def" },
+    { label: "เงินเติมสุทธิ", value: netDeposits, color: "#f2b45a" },
+    { label: "Realized", value: realizedTotal, color: "#34c790" },
+    { label: "Unrealized เปลี่ยน", value: unrealizedChange ?? 0, color: "#ee6a6a" },
   ];
   const positive = (segs: BarSegment[]) => segs.reduce((s, x) => s + Math.max(x.value, 0), 0);
   const barScale = Math.max(positive(costSegments), positive(valueSegments));
@@ -178,7 +184,7 @@ export default function AnalysisSection({
 
   const assetName = (id: string) => assets.find((a) => a.id === id)?.name ?? id;
 
-  if (!periodStart || pnlStart == null || pnlNow == null) {
+  if (!periodStart || !statsStart || !statsNow || pnlStart == null || pnlNow == null) {
     return (
       <div className="rounded-lg border border-black/10 p-4 dark:border-white/10">
         <div className="mb-3 flex flex-wrap gap-1.5">
@@ -248,6 +254,12 @@ export default function AnalysisSection({
             {unrealizedChange != null ? <PnlText value={unrealizedChange} /> : "-"}
           </span>
         </div>
+        {pctBase > 0 && (
+          <p className="mt-2 text-xs text-black/50 dark:text-white/50">
+            % คิดจากเงินทุนเฉลี่ย {symbol}
+            {money0(pctBase)} (มูลค่าต้นช่วง + เงินเติมที่ถ่วงตามเวลาที่อยู่ในพอร์ต) ไม่นับเงินเติมเป็นกำไร
+          </p>
+        )}
       </div>
 
       <div className="space-y-6 rounded-2xl border border-black/10 p-5 dark:border-white/10">
@@ -259,18 +271,23 @@ export default function AnalysisSection({
         </div>
         <StackedBar
           title="ต้นทุนสะสม"
-          total={investCost + cashValue}
+          total={statsNow.totalCost}
           segments={costSegments}
           scale={barScale}
           symbol={symbol}
         />
         <StackedBar
-          title="มูลค่าปัจจุบัน (ต้นทุน + Unrealized)"
-          total={investValue + cashValue}
+          title="มูลค่าปัจจุบัน"
+          total={statsNow.totalValue}
           segments={valueSegments}
           scale={barScale}
           symbol={symbol}
         />
+        <p className="text-xs text-black/50 dark:text-white/50">
+          เงินเติมสุทธิ = เงินฝาก − เงินถอน ประมาณจากต้นทุนที่เปลี่ยนไปหักกำไรที่ขายแล้ว · ตอนนี้มีเงินสดอยู่ใน
+          พอร์ต {symbol}
+          {money0(cashValue)} (รวมอยู่ในตัวเลขข้างบนแล้ว)
+        </p>
       </div>
 
       <div>
