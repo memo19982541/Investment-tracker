@@ -21,6 +21,7 @@ import ProfitVsCostChart from "@/components/ProfitVsCostChart";
 import {
   buildCategorySeries,
   computeNoTradeSeries,
+  computeRealizedPnlEvents,
   type CategorySeriesPoint,
 } from "@/lib/analytics";
 import { formatDate, formatMoney, pickEvenTicks } from "@/lib/format";
@@ -97,6 +98,27 @@ function formatMonthName(ym: string) {
 }
 
 const DASHBOARD_PERIODS: Period[] = ["1m", "3m", "6m", "1y", "all"];
+
+function PeriodChips({ value, onChange }: { value: Period; onChange: (p: Period) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {DASHBOARD_PERIODS.map((p) => (
+        <button
+          key={p}
+          type="button"
+          onClick={() => onChange(p)}
+          className={`rounded-full border px-2.5 py-1 text-xs ${
+            value === p
+              ? "border-black/20 font-medium dark:border-white/30"
+              : "border-black/10 text-black/40 dark:border-white/10 dark:text-white/40"
+          }`}
+        >
+          {PERIOD_LABELS[p]}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function EmptyNote({ children }: { children: ReactNode }) {
   return (
@@ -233,6 +255,33 @@ export default function DashboardCharts({
   const cutoff = useMemo(() => cutoffDateFor(period), [period]);
 
   // The total-value chart has its own range, defaulting to the last 6 months.
+  // Realized gain is cumulative from the first sale on, so it's summed over the
+  // full history before the range is applied (a range must not reset it to 0).
+  const realizedEvents = useMemo(
+    () =>
+      computeRealizedPnlEvents(transactions, assets, currency).sort((a, b) =>
+        a.date.localeCompare(b.date)
+      ),
+    [transactions, assets, currency]
+  );
+  const costProfitPoints = useMemo(
+    () =>
+      totalPoints.map((p) => ({
+        date: p.date,
+        realized: realizedEvents
+          .filter((e) => e.date <= p.date)
+          .reduce((sum, e) => sum + e.pnl, 0),
+        unrealized: p.totalValue - p.totalCost,
+      })),
+    [totalPoints, realizedEvents]
+  );
+  const [costPeriod, setCostPeriod] = useState<Period>("6m");
+  const costCutoff = useMemo(() => cutoffDateFor(costPeriod), [costPeriod]);
+  const visibleCostPoints = useMemo(
+    () => (costCutoff ? costProfitPoints.filter((p) => p.date >= costCutoff) : costProfitPoints),
+    [costProfitPoints, costCutoff]
+  );
+
   const [totalPeriod, setTotalPeriod] = useState<Period>("6m");
   const totalCutoff = useMemo(() => cutoffDateFor(totalPeriod), [totalPeriod]);
   const visibleTotalPoints = useMemo(
@@ -357,22 +406,7 @@ export default function DashboardCharts({
       )}
 
       {view === "total" && totalPoints.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {DASHBOARD_PERIODS.map((p) => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => setTotalPeriod(p)}
-              className={`rounded-full border px-2.5 py-1 text-xs ${
-                totalPeriod === p
-                  ? "border-black/20 font-medium dark:border-white/30"
-                  : "border-black/10 text-black/40 dark:border-white/10 dark:text-white/40"
-              }`}
-            >
-              {PERIOD_LABELS[p]}
-            </button>
-          ))}
-        </div>
+        <PeriodChips value={totalPeriod} onChange={setTotalPeriod} />
       )}
 
       {view === "total" &&
@@ -665,12 +699,10 @@ export default function DashboardCharts({
         (totalPoints.length === 0 ? (
           <EmptyNote>ยังไม่มีประวัติมูลค่าพอร์ต</EmptyNote>
         ) : (
-          <ProfitVsCostChart
-            points={totalPoints.map((p) => ({
-              date: p.date,
-              profit: p.totalValue - p.totalCost,
-            }))}
-          />
+          <>
+            <PeriodChips value={costPeriod} onChange={setCostPeriod} />
+            <ProfitVsCostChart points={visibleCostPoints} />
+          </>
         ))}
 
       {view === "allocation" && (

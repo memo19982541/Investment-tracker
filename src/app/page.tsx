@@ -15,7 +15,7 @@ import {
   getTransactions,
   sortAssetsForDisplay,
 } from "@/lib/data";
-import { computeChangeSincePrevious } from "@/lib/analytics";
+import { computeChangeSincePrevious, computeRealizedPnlEvents } from "@/lib/analytics";
 import { dailyMessage, dailyTier } from "@/lib/cheer";
 import { formatDateWithWeekday, formatMoney, todayInThailand } from "@/lib/format";
 import DailyUpdateButton from "@/components/DailyUpdateButton";
@@ -36,6 +36,10 @@ const CURRENCY_LABEL: Record<Currency, string> = {
   THB: "พอร์ตบาท (THB)",
   USD: "พอร์ตดอลลาร์ (USD)",
 };
+
+function formatSigned(n: number) {
+  return `${n >= 0 ? "+" : ""}${formatMoney(n)}`;
+}
 
 function CurrencySection({
   currency,
@@ -58,6 +62,12 @@ function CurrencySection({
   const totalCost = holdings.reduce((s, h) => s + h.cost, 0);
   const totalPnl = totalValue - totalCost;
   const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
+  // Gain booked by past sales, shown beside the unrealized figure so selling
+  // doesn't make profit vanish from the header.
+  const realizedPnl = computeRealizedPnlEvents(transactions, assets, currency).reduce(
+    (sum, e) => sum + e.pnl,
+    0
+  );
   const targetPctSum = holdings.reduce((s, h) => s + (h.asset.targetPct ?? 0), 0);
   const cashTotal = holdings
     .filter((h) => h.asset.type === "cash")
@@ -96,8 +106,14 @@ function CurrencySection({
           {showUpdateButton && currency !== "THB" && <DailyUpdateButton />}
         </div>
         <p className={totalPnl >= 0 ? "text-green-600" : "text-red-600"}>
-          {totalPnl >= 0 ? "+" : ""}
-          {formatMoney(totalPnl)} ({totalPnlPct.toFixed(2)}%)
+          {formatSigned(totalPnl)} ({totalPnlPct.toFixed(2)}%)
+        </p>
+        <p
+          className={`text-sm ${
+            realizedPnl >= 0 ? "text-[#5fa67b] dark:text-[#caebd6]" : "text-red-400"
+          }`}
+        >
+          ขายแล้ว {formatSigned(realizedPnl)}
         </p>
         {dailyChange && (
           <p className="mt-1 text-sm text-black/60 dark:text-white/60">
