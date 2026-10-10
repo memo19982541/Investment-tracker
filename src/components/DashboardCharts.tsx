@@ -18,6 +18,7 @@ import {
 } from "recharts";
 import FundValueChart from "@/components/FundValueChart";
 import ProfitVsCostChart from "@/components/ProfitVsCostChart";
+import ValueBreakdownChart from "@/components/ValueBreakdownChart";
 import {
   buildCategorySeries,
   computeNoTradeSeries,
@@ -266,13 +267,19 @@ export default function DashboardCharts({
   );
   const costProfitPoints = useMemo(
     () =>
-      totalPoints.map((p) => ({
-        date: p.date,
-        realized: realizedEvents
+      totalPoints.map((p) => {
+        const realized = realizedEvents
           .filter((e) => e.date <= p.date)
-          .reduce((sum, e) => sum + e.pnl, 0),
-        unrealized: p.totalValue - p.totalCost,
-      })),
+          .reduce((sum, e) => sum + e.pnl, 0);
+        return {
+          date: p.date,
+          realized,
+          unrealized: p.totalValue - p.totalCost,
+          // Selling shifts cost by exactly the realized gain, so what's left of
+          // the cost after taking realized gains out is the net money put in.
+          capital: p.totalCost - realized,
+        };
+      }),
     [totalPoints, realizedEvents]
   );
   const [costPeriod, setCostPeriod] = useState<Period>("6m");
@@ -285,8 +292,9 @@ export default function DashboardCharts({
   const [totalPeriod, setTotalPeriod] = useState<Period>("6m");
   const totalCutoff = useMemo(() => cutoffDateFor(totalPeriod), [totalPeriod]);
   const visibleTotalPoints = useMemo(
-    () => (totalCutoff ? totalPoints.filter((p) => p.date >= totalCutoff) : totalPoints),
-    [totalPoints, totalCutoff]
+    () =>
+      totalCutoff ? costProfitPoints.filter((p) => p.date >= totalCutoff) : costProfitPoints,
+    [costProfitPoints, totalCutoff]
   );
 
   const noTradeSeriesFull = useMemo(
@@ -298,10 +306,6 @@ export default function DashboardCharts({
     [noTradeSeriesFull, cutoff]
   );
 
-  const totalTicks = useMemo(
-    () => pickEvenTicks(visibleTotalPoints.map((p) => p.date)),
-    [visibleTotalPoints]
-  );
   const categoryTicks = useMemo(
     () => pickEvenTicks(categorySeries.points.map((p) => p.date)),
     [categorySeries]
@@ -415,41 +419,7 @@ export default function DashboardCharts({
             ยังไม่มีประวัติมูลค่าพอร์ต กด &quot;บันทึกราคา&quot; ในหน้าอัปเดตราคาเพื่อเริ่มเก็บข้อมูล
           </EmptyNote>
         ) : (
-          <div className="h-72 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={visibleTotalPoints} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="currentColor" opacity={0.1} />
-                <XAxis
-                  dataKey="date"
-                  ticks={totalTicks}
-                  fontSize={12}
-                  stroke="currentColor"
-                  opacity={0.6}
-                  tickFormatter={formatDate}
-                />
-                <YAxis
-                  domain={TIGHT_DOMAIN}
-                  allowDataOverflow
-                  fontSize={12}
-                  stroke="currentColor"
-                  opacity={0.6}
-                  width={70}
-                  tickFormatter={numberTick}
-                />
-                <Tooltip
-                  labelFormatter={(label) => formatDate(String(label))}
-                  formatter={(value) =>
-                    typeof value === "number"
-                      ? value.toLocaleString("th-TH", { maximumFractionDigits: 2 })
-                      : value
-                  }
-                />
-                <Legend />
-                <Line type="monotone" dataKey="totalValue" name="มูลค่าพอร์ตรวม" stroke="#2563eb" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="totalCost" name="ทุนรวม" stroke="#dc2626" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+          <ValueBreakdownChart points={visibleTotalPoints} />
         ))}
 
       {view === "category" &&
