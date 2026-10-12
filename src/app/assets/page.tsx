@@ -175,7 +175,10 @@ export default async function AssetsPage() {
                             colSpan={7}
                             className="pb-2 text-xs text-black/50 dark:text-white/50"
                           >
-                            <div className="sticky left-0 w-[calc(100vw-3rem)] max-w-full">
+                            {/* Pinned to the left while the table scrolls on a phone. Capped at the
+                                content width (max-w-3xl minus padding) — a bare 100vw-based width
+                                would force the table wider than its container on desktop. */}
+                            <div className="sticky left-0 w-[min(100vw-3rem,45rem)]">
                               {detailParts.join(" · ")}
                             </div>
                           </td>
