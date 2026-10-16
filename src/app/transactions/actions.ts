@@ -17,8 +17,12 @@ export async function createTransaction(formData: FormData) {
 
   const assetId = String(formData.get("assetId") ?? "");
   const date = String(formData.get("date") ?? "");
-  const type = String(formData.get("type") ?? "buy") as Transaction["type"];
-  const note = String(formData.get("note") ?? "");
+  const rawType = String(formData.get("type") ?? "buy");
+  if (rawType !== "buy" && rawType !== "sell" && rawType !== "dividend") {
+    throw new Error("ประเภทธุรกรรมไม่ถูกต้อง");
+  }
+  const type: Transaction["type"] = rawType;
+  let note = String(formData.get("note") ?? "");
 
   if (!assetId || !date) {
     throw new Error("กรุณากรอกข้อมูลให้ครบถ้วน");
@@ -26,6 +30,17 @@ export async function createTransaction(formData: FormData) {
 
   const assets = await getAssets(accessToken, spreadsheetId);
   const asset = assets.find((a) => a.id === assetId);
+
+  // A dividend is cash arriving in a cash account; label it with the fund or
+  // stock that paid it so the history and Analysis show where it came from.
+  if (type === "dividend") {
+    if (asset?.type !== "cash") {
+      throw new Error("ปันผลต้องฝากเข้าสินทรัพย์ประเภทเงินสดเท่านั้น");
+    }
+    const source = assets.find((a) => a.id === String(formData.get("dividendSourceId") ?? ""));
+    note = [source ? `ปันผล ${source.name}` : "ปันผล", note].filter(Boolean).join(" · ");
+  }
+
   // Cash has no NAV — 1 unit is always worth 1 currency unit, so deposits/
   // withdrawals don't need a price entered.
   const pricePerUnit =

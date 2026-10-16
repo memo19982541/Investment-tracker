@@ -112,7 +112,7 @@ export async function backfillFundHistory(
   for (const point of sortedNav) {
     while (txIdx < assetTx.length && assetTx[txIdx].date <= point.navDate) {
       const t = assetTx[txIdx];
-      if (t.type === "buy") {
+      if (t.type !== "sell") {
         units += t.units;
         cost += t.totalValue;
       } else {

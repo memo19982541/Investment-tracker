@@ -123,14 +123,15 @@ export default function AnalysisSection({
   const realizedEvents = useMemo(() => {
     // Cash "sells" are withdrawals/internal transfers, not investing
     // decisions — they always realize ~0 pnl (cost=value=amount for cash)
-    // and would just clutter the sales report.
+    // and would just clutter the sales report. Dividend deposits also land on
+    // a cash asset but are real gains, so they stay in.
     const tradableAssetIds = new Set(
       assets.filter((a) => a.type !== "cash").map((a) => a.id)
     );
     return computeRealizedPnlEvents(transactions, assets, currency)
       .filter(
         (e) =>
-          tradableAssetIds.has(e.assetId) &&
+          (e.kind === "dividend" || tradableAssetIds.has(e.assetId)) &&
           (!periodStart || e.date > periodStart) &&
           e.date <= today
       )
@@ -247,7 +248,7 @@ export default function AnalysisSection({
         </p>
         <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm text-black/60 dark:text-white/60">
           <span>
-            รับรู้แล้ว (จากการขาย): <PnlText value={realizedTotal} />
+            รับรู้แล้ว (จากการขายและปันผล): <PnlText value={realizedTotal} />
           </span>
           <span>
             ยังไม่รับรู้ (เปลี่ยนแปลงในช่วงนี้):{" "}
@@ -291,9 +292,9 @@ export default function AnalysisSection({
       </div>
 
       <div>
-        <h3 className="mb-2 text-sm font-semibold">การขายทำกำไร/ขาดทุนในช่วงนี้</h3>
+        <h3 className="mb-2 text-sm font-semibold">การขายและปันผลในช่วงนี้</h3>
         {realizedEvents.length === 0 ? (
-          <p className="text-sm text-black/50 dark:text-white/50">ไม่มีการขายในช่วงนี้</p>
+          <p className="text-sm text-black/50 dark:text-white/50">ไม่มีการขายหรือปันผลในช่วงนี้</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -311,10 +312,18 @@ export default function AnalysisSection({
                 {realizedEvents.map((e, i) => (
                   <tr key={i} className="border-b border-black/5 dark:border-white/5">
                     <td className="py-2 pr-4">{formatDate(e.date)}</td>
-                    <td className="py-2 pr-4">{assetName(e.assetId)}</td>
-                    <td className="py-2 pr-4 text-right">{e.units.toLocaleString("th-TH", { maximumFractionDigits: 4 })}</td>
+                    <td className="py-2 pr-4">
+                      {e.kind === "dividend" ? e.note || "ปันผล" : assetName(e.assetId)}
+                    </td>
+                    <td className="py-2 pr-4 text-right">
+                      {e.kind === "dividend"
+                        ? "-"
+                        : e.units.toLocaleString("th-TH", { maximumFractionDigits: 4 })}
+                    </td>
                     <td className="py-2 pr-4 text-right">{formatMoney(e.proceeds)}</td>
-                    <td className="py-2 pr-4 text-right">{formatMoney(e.costBasis)}</td>
+                    <td className="py-2 pr-4 text-right">
+                      {e.kind === "dividend" ? "-" : formatMoney(e.costBasis)}
+                    </td>
                     <td className="py-2 pr-4 text-right">
                       <PnlText value={e.pnl} pct={e.costBasis > 0 ? (e.pnl / e.costBasis) * 100 : undefined} />
                     </td>

@@ -99,7 +99,7 @@ export async function computeMasterFundImpliedCost(
   let units = 0;
   let cost = 0;
   for (const t of sortedTx) {
-    if (t.type === "buy") {
+    if (t.type !== "sell") {
       units += t.units;
       cost += (t.pricePerUnit / k) * t.units;
     } else {

@@ -79,12 +79,16 @@ export interface RealizedPnlEvent {
   units: number;
   proceeds: number;
   costBasis: number;
+  /** "sale" for a sell; "dividend" for dividend cash deposited (the whole amount is gain). */
+  kind: "sale" | "dividend";
+  note: string;
 }
 
 /**
  * Replays each asset's buy/sell history (average-cost method, same
  * sequencing as computeHoldings) and records the realized gain/loss booked
- * on every sell — sale proceeds minus the average cost of the units sold.
+ * on every sell — sale proceeds minus the average cost of the units sold —
+ * plus every dividend deposit (all of it gain).
  * Needed to separate "totalCost changed because a trade realized a
  * gain/loss" from "totalCost changed because money was actually deposited
  * or withdrawn", which the no-trade baseline must not conflate. Also used
@@ -108,9 +112,24 @@ export function computeRealizedPnlEvents(
     let units = 0;
     let cost = 0;
     for (const t of assetTx) {
-      if (t.type === "buy") {
+      if (t.type !== "sell") {
         units += t.units;
         cost += t.totalValue;
+        // Dividend cash raises the cash asset's cost like a deposit would, but
+        // it's earned money, so book it as realized gain. Net deposits
+        // (cost change minus realized) then correctly leave it out.
+        if (t.type === "dividend") {
+          events.push({
+            date: t.date,
+            pnl: t.totalValue,
+            assetId,
+            units: t.units,
+            proceeds: t.totalValue,
+            costBasis: 0,
+            kind: "dividend",
+            note: t.note,
+          });
+        }
       } else {
         const avgCost = units > 0 ? cost / units : 0;
         const costRemoved = avgCost * t.units;
@@ -121,6 +140,8 @@ export function computeRealizedPnlEvents(
           units: t.units,
           proceeds: t.totalValue,
           costBasis: costRemoved,
+          kind: "sale",
+          note: t.note,
         });
         units -= t.units;
         cost -= costRemoved;
@@ -218,23 +239,18 @@ export interface SnapshotChange {
 }
 
 /**
- * How much the portfolio moved since the last retained snapshot before
- * `today`, excluding deposits/withdrawals — same idea as the Analysis page:
- * realized gains from sells since then plus the change in (value − cost).
+ * How much the portfolio's total value moved since the last retained snapshot
+ * before `today` — the plain difference in value, so deposits and withdrawals
+ * count (it's what you see the number do, not a profit figure).
  *
  * Only snapshots that survive pruning (Wed/Sat or manual) count as the
  * baseline, so the comparison point doesn't jump around depending on whether
- * the pruning has run yet today. Realized events cover every asset of the
- * currency, hidden or not, because the snapshot's P&L included assets that
- * have since been sold out and hidden.
+ * the pruning has run yet today.
  */
 export function computeChangeSincePrevious(
   snapshots: Snapshot[],
-  transactions: Transaction[],
-  assets: Asset[],
   currency: Currency,
   currentValue: number,
-  currentCost: number,
   today: string
 ): SnapshotChange | null {
   let prev: Snapshot | null = null;
@@ -245,14 +261,8 @@ export function computeChangeSincePrevious(
   }
   if (!prev) return null;
 
-  const prevDate = prev.date;
-  const prevPnl = prev.totalValue - prev.totalCost;
-  const realizedSince = computeRealizedPnlEvents(transactions, assets, currency)
-    .filter((e) => e.date > prevDate && e.date <= today)
-    .reduce((sum, e) => sum + e.pnl, 0);
-
-  const change = currentValue - currentCost - prevPnl + realizedSince;
-  return { prevDate, change, pct: prev.totalValue > 0 ? (change / prev.totalValue) * 100 : 0 };
+  const change = currentValue - prev.totalValue;
+  return { prevDate: prev.date, change, pct: prev.totalValue > 0 ? (change / prev.totalValue) * 100 : 0 };
 }
 
 /**

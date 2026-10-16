@@ -87,7 +87,7 @@ export default async function TransactionsPage({
                       {assetById.get(t.assetId)?.name ?? t.assetId}
                     </td>
                     <td className="py-2 pr-4">
-                      {t.type === "buy" ? "ซื้อ" : "ขาย"}
+                      {t.type === "buy" ? "ซื้อ" : t.type === "dividend" ? "ปันผล" : "ขาย"}
                     </td>
                     <td className="py-2 pr-4 text-right">
                       {formatUnits(t.units)}

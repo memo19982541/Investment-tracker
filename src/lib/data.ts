@@ -590,7 +590,7 @@ export async function recomputeHistoricalSnapshots(
       let units = 0;
       let cost = 0;
       for (const t of assetTx) {
-        if (t.type === "buy") {
+        if (t.type !== "sell") {
           units += t.units;
           cost += t.totalValue;
         } else {
@@ -758,7 +758,7 @@ export async function addHistoricalSnapshots(
         let units = 0;
         let cost = 0;
         for (const t of assetTx) {
-          if (t.type === "buy") {
+          if (t.type !== "sell") {
             units += t.units;
             cost += t.totalValue;
           } else {
@@ -836,7 +836,7 @@ export function computeHoldings(
     let units = 0;
     let cost = 0;
     for (const t of assetTx) {
-      if (t.type === "buy") {
+      if (t.type !== "sell") {
         units += t.units;
         cost += t.totalValue;
       } else {

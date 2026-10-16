@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { createTransaction } from "@/app/transactions/actions";
 import { sortAssetsForPicker } from "@/lib/assetPicker";
 import { todayInThailand } from "@/lib/format";
-import type { Asset } from "@/lib/types";
+import type { Asset, TxType } from "@/lib/types";
 
 type AmountMode = "units" | "totalValue";
 
@@ -19,6 +19,17 @@ export default function TransactionForm({ assets: unsortedAssets }: { assets: As
     () =>
       assets.filter(
         (a) => a.type === "cash" && !a.hidden && a.currency === selectedAsset?.currency
+      ),
+    [assets, selectedAsset?.currency]
+  );
+  // The chosen type, except that dividend only exists for cash accounts — picking
+  // a fund/stock after choosing it falls back to a normal buy.
+  const [chosenType, setTxType] = useState<TxType>("buy");
+  const txType: TxType = chosenType === "dividend" && !isCash ? "buy" : chosenType;
+  const dividendSources = useMemo(
+    () =>
+      assets.filter(
+        (a) => a.type !== "cash" && !a.hidden && a.currency === selectedAsset?.currency
       ),
     [assets, selectedAsset?.currency]
   );
@@ -53,12 +64,32 @@ export default function TransactionForm({ assets: unsortedAssets }: { assets: As
         ประเภทธุรกรรม
         <select
           name="type"
+          value={txType}
+          onChange={(e) => setTxType(e.target.value as TxType)}
           className="rounded-md border border-black/15 px-3 py-2 dark:border-white/20 dark:bg-transparent"
         >
           <option value="buy">{isCash ? "ฝากเข้า" : "ซื้อ"}</option>
           <option value="sell">{isCash ? "ถอนออก" : "ขาย"}</option>
+          {isCash && <option value="dividend">ฝากเงินปันผล (นับเป็นกำไรที่ขายแล้ว)</option>}
         </select>
       </label>
+      {txType === "dividend" && (
+        <label className="flex flex-col gap-1 text-sm">
+          ปันผลจาก (ถ้ามี)
+          <select
+            name="dividendSourceId"
+            defaultValue=""
+            className="rounded-md border border-black/15 px-3 py-2 dark:border-white/20 dark:bg-transparent"
+          >
+            <option value="">ไม่ระบุ</option>
+            {dividendSources.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <label className="flex flex-col gap-1 text-sm">
         วันที่
         <input

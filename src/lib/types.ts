@@ -1,6 +1,10 @@
 export type AssetType = "fund" | "stock" | "cash";
 export type Currency = "THB" | "USD";
-export type TxType = "buy" | "sell";
+/**
+ * "dividend" is a deposit of dividend cash: it adds units to a cash asset like
+ * a buy, but counts as a realized gain instead of money put in.
+ */
+export type TxType = "buy" | "sell" | "dividend";
 
 export interface Asset {
   id: string;

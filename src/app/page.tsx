@@ -74,11 +74,8 @@ function CurrencySection({
     .reduce((s, h) => s + h.currentValue, 0);
   const dailyChange = computeChangeSincePrevious(
     snapshots,
-    transactions,
-    assets,
     currency,
     totalValue,
-    totalCost,
     todayInThailand()
   );
 
@@ -117,7 +114,7 @@ function CurrencySection({
         </p>
         {dailyChange && (
           <p className="mt-1 text-sm text-black/60 dark:text-white/60">
-            เปลี่ยนจากบันทึกก่อนหน้า ({formatDateWithWeekday(dailyChange.prevDate)}):{" "}
+            มูลค่ารวมเปลี่ยนจากบันทึกก่อนหน้า ({formatDateWithWeekday(dailyChange.prevDate)}):{" "}
             <span className={dailyChange.change >= 0 ? "text-green-600" : "text-red-600"}>
               {dailyChange.change >= 0 ? "+" : ""}
               {formatMoney(dailyChange.change)} ({dailyChange.change >= 0 ? "+" : ""}
