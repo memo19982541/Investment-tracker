@@ -12,6 +12,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { lossAwareBar, LOSS_STROKE } from "@/components/lossBar";
 import { formatDate, formatMoney, pickEvenTicks } from "@/lib/format";
 
 export interface ProfitPoint {
@@ -24,6 +25,15 @@ export interface ProfitPoint {
 
 const REALIZED_COLOR = "#15803d";
 const UNREALIZED_COLOR = "#86efac";
+
+// Gains are solid fills; a loss is drawn empty with a red outline (see lossAwareBar).
+function solidBar(fill: string) {
+  return function SolidBar({ x, y, width, height }: { x: number; y: number; width: number; height: number }) {
+    return <rect x={x} y={y} width={width} height={height} fill={fill} />;
+  };
+}
+const RealizedBar = lossAwareBar("realized", solidBar(REALIZED_COLOR));
+const UnrealizedBar = lossAwareBar("unrealized", solidBar(UNREALIZED_COLOR));
 
 const SERIES_NAMES: Record<string, string> = {
   realized: "กำไร/ขาดทุนที่ขายแล้ว (realized)",
@@ -75,8 +85,8 @@ export default function ProfitVsCostChart({ points }: { points: ProfitPoint[] })
                 SERIES_NAMES[String(name)] ?? name,
               ]}
             />
-            <Bar dataKey="realized" stackId="profit" fill={REALIZED_COLOR} />
-            <Bar dataKey="unrealized" stackId="profit" fill={UNREALIZED_COLOR} />
+            <Bar dataKey="realized" stackId="profit" fill={REALIZED_COLOR} shape={RealizedBar} />
+            <Bar dataKey="unrealized" stackId="profit" fill={UNREALIZED_COLOR} shape={UnrealizedBar} />
             <Line
               type="monotone"
               dataKey="total"
@@ -96,6 +106,13 @@ export default function ProfitVsCostChart({ points }: { points: ProfitPoint[] })
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: UNREALIZED_COLOR }} />
           {SERIES_NAMES.unrealized}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span
+            className="inline-block h-2.5 w-2.5 rounded-sm border"
+            style={{ borderColor: LOSS_STROKE }}
+          />
+          ขาดทุน (ไม่มีสี กรอบแดง)
         </span>
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-0.5 w-4 bg-current opacity-70" />

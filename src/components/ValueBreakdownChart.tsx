@@ -13,6 +13,7 @@ import {
   YAxis,
 } from "recharts";
 import { formatDate, formatMoney, pickEvenTicks } from "@/lib/format";
+import { HollowLossBar, LOSS_STROKE } from "@/components/lossBar";
 
 export interface ValuePoint {
   date: string;
@@ -56,9 +57,9 @@ function numberTick(v: number) {
  * little room under the lowest bar top. Rounded down to a tidy step, and
  * never below 0.
  */
-function axisFloorFor(points: { capital: number; realized: number; unrealized: number }[]) {
+function axisFloorFor(points: { capitalBar: number; value: number }[]) {
   if (points.length === 0) return 0;
-  const tops = points.flatMap((p) => [p.capital, p.capital + p.realized + p.unrealized]);
+  const tops = points.flatMap((p) => [p.capitalBar, p.value]);
   const lo = Math.min(...tops);
   const hi = Math.max(...tops, 0);
   const span = Math.max(hi - lo, hi * 0.05, 1);
@@ -70,7 +71,7 @@ function signed(n: number) {
   return `${n >= 0 ? "+" : ""}${formatMoney(n)}`;
 }
 
-interface BarShapeProps {
+interface BarBox {
   x?: number;
   y?: number;
   width?: number;
@@ -78,21 +79,20 @@ interface BarShapeProps {
 }
 
 /**
- * A bar shape filled with its own top-to-bottom gradient, so each bar fades
- * over exactly its own height. Recharts already clips a bar at the axis
- * floor, so the bottom edge is the faded end. Negative values arrive with a
- * negative height; flip those so they still draw.
+ * A bar shape with a fill (a flat colour, or its own top-to-bottom gradient so
+ * each bar fades over exactly its own height — recharts already clips a bar at
+ * the axis floor, so the bottom edge is the faded end) and the faint grey outline.
  */
-function gradientBar(gradientId: string) {
-  return function GradientBar({ x = 0, y = 0, width = 0, height = 0 }: BarShapeProps) {
-    if (height === 0) return null;
+function filledBar(fill: string) {
+  return function FilledBar({ x = 0, y = 0, width = 0, height = 0 }: BarBox) {
+    if (height <= 0) return null;
     return (
       <rect
         x={x}
-        y={height < 0 ? y + height : y}
+        y={y}
         width={width}
-        height={Math.abs(height)}
-        fill={`url(#${gradientId})`}
+        height={height}
+        fill={fill}
         stroke={BAR_STROKE}
         strokeOpacity={BAR_STROKE_OPACITY}
         strokeWidth={1}
@@ -101,8 +101,9 @@ function gradientBar(gradientId: string) {
   };
 }
 
-const CapitalBar = gradientBar(CAPITAL_GRADIENT_ID);
-const UnrealizedBar = gradientBar(UNREALIZED_GRADIENT_ID);
+const CapitalBar = filledBar(`url(#${CAPITAL_GRADIENT_ID})`);
+const UnrealizedBar = filledBar(`url(#${UNREALIZED_GRADIENT_ID})`);
+const RealizedBar = filledBar(REALIZED_COLOR);
 
 // Each tooltip row takes its series' colour. The pale fills (the fading capital
 // and unrealized bars) are unreadable as text, so those rows use the deeper
@@ -136,14 +137,29 @@ function ValueTooltip({ active, payload }: TooltipProps) {
 }
 
 /**
- * Portfolio value as stacked bars: the money put in, plus what's been gained
- * by selling, plus what's gained on the holdings (negative gains drop below
- * zero). The line is the total value, so a loss that stacks below zero still
- * reads against the real value.
+ * Portfolio value as stacked bars: the money put in, with gains stacked on top.
+ * A loss is money that's gone, so the pink bar is shortened by the loss (the
+ * solid part ends at the real total value) and the loss is drawn above it, at
+ * the very top of the bar, as an empty red box showing the missing amount.
+ * The pink line marks the full amount put in and the grey line is the total value.
  */
 export default function ValueBreakdownChart({ points }: { points: ValuePoint[] }) {
   const data = useMemo(
-    () => points.map((p) => ({ ...p, value: p.capital + p.realized + p.unrealized })),
+    () =>
+      points.map((p) => {
+        const realizedLoss = Math.max(0, -p.realized);
+        const unrealizedLoss = Math.max(0, -p.unrealized);
+        return {
+          ...p,
+          value: p.capital + p.realized + p.unrealized,
+          // Stack order: pink (what's left of the capital) → gains → loss boxes on top.
+          capitalBar: p.capital - realizedLoss - unrealizedLoss,
+          realizedLoss,
+          unrealizedLoss,
+          realizedGain: Math.max(0, p.realized),
+          unrealizedGain: Math.max(0, p.unrealized),
+        };
+      }),
     [points]
   );
   const ticks = useMemo(() => pickEvenTicks(data.map((p) => p.date)), [data]);
@@ -185,15 +201,11 @@ export default function ValueBreakdownChart({ points }: { points: ValuePoint[] }
             />
             {axisFloor === 0 && <ReferenceLine y={0} stroke="currentColor" opacity={0.35} />}
             <Tooltip content={<ValueTooltip />} />
-            <Bar dataKey="capital" stackId="value" fill={CAPITAL_TOP} shape={CapitalBar} />
-            <Bar
-              dataKey="realized"
-              stackId="value"
-              fill={REALIZED_COLOR}
-              stroke={BAR_STROKE}
-              strokeOpacity={BAR_STROKE_OPACITY}
-            />
-            <Bar dataKey="unrealized" stackId="value" fill={UNREALIZED_TOP} shape={UnrealizedBar} />
+            <Bar dataKey="capitalBar" stackId="value" fill={CAPITAL_TOP} shape={CapitalBar} />
+            <Bar dataKey="realizedGain" stackId="value" fill={REALIZED_COLOR} shape={RealizedBar} />
+            <Bar dataKey="unrealizedGain" stackId="value" fill={UNREALIZED_TOP} shape={UnrealizedBar} />
+            <Bar dataKey="realizedLoss" stackId="value" shape={HollowLossBar} />
+            <Bar dataKey="unrealizedLoss" stackId="value" shape={HollowLossBar} />
             <Line
               type="monotone"
               dataKey="capital"
@@ -229,6 +241,13 @@ export default function ValueBreakdownChart({ points }: { points: ValuePoint[] }
             {SERIES_NAMES[key]}
           </span>
         ))}
+        <span className="flex items-center gap-1.5">
+          <span
+            className="inline-block h-2.5 w-2.5 rounded-sm border"
+            style={{ borderColor: LOSS_STROKE }}
+          />
+          ขาดทุน (ไม่มีสี กรอบแดง)
+        </span>
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-0.5 w-4" style={{ backgroundColor: CAPITAL_LINE }} />
           เส้นเงินทุน
